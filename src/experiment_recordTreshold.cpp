@@ -692,4 +692,5 @@ void MapNode(const String nodeUID, bool isRFID, int mask){
   graph[currentNodeIndex].neighbors[direction]=newNodeIndex;
   graph[currentNodeIndex].costs[direction]=travelTime;
   graph[currentNodeIndex].ptrs[direction]=&(graph[newNodeIndex]);
+  currentNodeIndex = newNodeIndex;
 }
