@@ -248,8 +248,15 @@ std::vector<Node> graph;            // Our global graph
 
 Node wall;
 
-// TODO do modes for behaviour
-String mode="mapping";  //mapping=traversing the area blindly
+vector<Node*> targetpath;
+
+//0= wandering around until it comes across an RFID tag.
+//1= mapping the maze
+//2= going to a target node(for maze purposes)
+//3= awaiting orders
+//4= going to a target node(for delivery purposes)
+int mode=0;  
+
 
 
 int currentNodeIndex = -1;          // Index of the current node in the graph
@@ -264,13 +271,13 @@ int  addNode(const String& uid, bool isRFID);//reused as is
 int  addNodePtr(const String uid, bool isRFID, int prev_ind, int mask);//new
 void driveMotors(int leftSpeed, int rightSpeed); //reused as is
 void handleLineFollow(); //reused as is
-void checkForRFID();//reused as is
+bool checkForRFID();//tweaked
 void MapNode(const String nodeUID, bool isRFID, int mask);//new
 
 String detectIntersection2(); //new
 
 String createIntersectionID(char type); //reused as is
-void handleIntersectionIfNeeded();//tweaked
+bool handleIntersectionIfNeeded();//tweaked
 
 
 // --------------- SETUP -------------------------------
@@ -338,25 +345,6 @@ void setup()
 
   delay(1000);
 
-  // ----- START NODE HANDLING -----
-  if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
-    // We'll treat this as the "start node"
-    String startUID = "";
-    for (int i = 0; i < rfid.uid.size; i++) {
-      startUID += String(rfid.uid.uidByte[i], HEX);
-    }
-    startUID.toUpperCase();
-    startNodeIndex = addNode(startUID, true);
-    Serial.print("Starting node (RFID): ");
-    Serial.println(startUID);
-
-  } else {
-    // No RFID at start => create a "START" node
-    startNodeIndex = addNode("START", false);
-    Serial.println("No RFID detected at start; using 'START' node.");
-  }
-  currentNodeIndex = startNodeIndex;
-
   segmentStartTime = millis(); // start measuring travel time from the initial node
   
 }
@@ -364,7 +352,26 @@ void setup()
 // --------------- MAIN LOOP ---------------------------
 void loop()
 {
- m1();
+switch (mode)
+{
+case 0:
+  wander();
+  break;
+case 1:
+  mapMaze();
+  break;
+case 2:
+  goToNode(targetpath);
+  break;
+case 3:
+  wander();
+  break;
+case 4:
+  wander();
+  break;
+default:
+  break;
+}
 }
 // -----------------------------------------------------
 //                       MODES
@@ -383,14 +390,143 @@ void m1(){
   handleLineFollow();
 }
 
-void m2(){
-
+void readyForOrder(){
+  //open connnection and wait until you get given a task.
+  if(false){
+  String targetInput;
+  targetpath=pathToNode(targetInput);
+  mode=4;
+  return;
+  } else {
+    Serial.println("I have mapped everything I saw");
+    delay(10000);
+  }
 }
+
+void mapMaze(){
+  handleLineFollow();
+  Node* target;
+  if(handleIntersectionIfNeeded() || checkForRFID()){
+  if(knownNode(&graph[currentNodeIndex])){
+    target=newTarget();
+    if(target==&wall){
+      mode=3;
+      return;
+    }
+    targetpath=pathToNode(target->uid);
+    mode=2;
+  } else {
+    for(int i=0; i< graph[currentNodeIndex].ptrs.size();i++){
+      if(graph[currentNodeIndex].ptrs[i]==nullptr){
+        switch (direction-i)
+        {
+        case -1:
+        case 3:
+          turnL();
+          break;
+        case 2:
+          turnL();
+          turnL();
+          break;
+        case 1: 
+        case -3:
+          turnR();
+          break;
+        default:
+          break;
+        }
+        i+=graph[currentNodeIndex].ptrs.size();
+      }
+    }
+
+  }
+  }
+}
+
+void goToNode(vector<Node*> path){
+
+    handleLineFollow();
+
+    if(handleIntersectionIfNeeded() || checkForRFID()){
+      if(&graph[currentNodeIndex]==*path.begin()){
+        path.erase(path.begin());
+      }
+      if(path.empty()){
+        Serial.println("I have arrived");
+        if(mode==2){
+          mode=1;
+        } else {
+          mode=3;
+        }
+        return;
+      }
+      for(int i=0; i< graph[currentNodeIndex].ptrs.size();i++){
+      if(graph[currentNodeIndex].ptrs[i]==*path.begin()){
+        switch (direction-i)
+        {
+        case -1:
+        case 3:
+          turnL();
+          break;
+        case 2:
+          turnL();
+          turnL();
+          break;
+        case 1: 
+        case -3:
+          turnR();
+          break;
+        default:
+          break;
+        }
+        i+=graph[currentNodeIndex].ptrs.size();
+      }
+    }
+    }
+}
+
+void wander(){
+  handleLineFollow();
+  if(handleIntersectionIfNeeded() || checkForRFID()){
+    for(int i=0; i< graph[currentNodeIndex].ptrs.size();i++){
+      if(graph[currentNodeIndex].ptrs[i]!=&wall){
+        switch (direction-i)
+        {
+        case -1:
+        case 3:
+          turnL();
+          break;
+        case 2:
+          turnL();
+          turnL();
+          break;
+        case 1: 
+        case -3:
+          turnR();
+          break;
+        default:
+          break;
+        }
+        i+=graph[currentNodeIndex].ptrs.size();
+      }
+    }
+  }
+}
+
 
 
 // -----------------------------------------------------
 //                 HELPER FUNCTIONS
 // -----------------------------------------------------
+
+bool knownNode(const Node* n){
+  for(int i=0;i<n->ptrs.size();i++){
+    if(n->ptrs[i]==nullptr){
+      return false;
+    }
+  }
+  return true;
+}
 
 /**
  * @brief Find node index in global 'graph' by its UID
@@ -414,13 +550,15 @@ int addNode(const String& uid, bool isRFID) {
   graph.push_back(n);
   return graph.size() - 1; // index of new node
 }
-int addNodePtr(const String uid, bool isRFID, int prev_ind, int mask){
+int addNodePtr(const String uid, bool isRFID, Node* prev_n, int mask){
   Node n;
   n.uid = uid;
   n.isRFID = isRFID;
   int from= (direction+2)%4;
-  n.neighbors[from]=prev_ind;
-  n.ptrs[from]=&(graph[prev_ind]);
+  if(prev_n!=nullptr){
+  n.neighbors[from]=findNodeIndex(prev_n->uid);
+  n.ptrs[from]=prev_n;
+  }
   if(!(mask&(1<<0))){
     n.ptrs[0]=&wall;
   }
@@ -522,9 +660,9 @@ void handleLineFollow()
 /**
  * @brief Check if a new RFID card is present; if new, create a node
  */
-void checkForRFID()
+bool checkForRFID()
 {
-  if (rfid.PICC_IsNewCardPresent()) {
+  if (rfid.PICC_IsNewCardPresent() || ignoreRFIDUntil < millis()) {
     ignoreRFIDUntil = millis() + 2000;
     if (rfid.PICC_ReadCardSerial()) {
       // Build the UID string
@@ -546,8 +684,10 @@ void checkForRFID()
 
       rfid.PICC_HaltA();
       rfid.PCD_StopCrypto1();
+      return true;
     }
   }
+  return false;
 }
 
 
@@ -616,16 +756,16 @@ String createIntersectionID(String type)
 /**
  * @brief If intersection is detected, stop, map it, decide a turn
  */
-void handleIntersectionIfNeeded() {
+bool handleIntersectionIfNeeded() {
     
     // Determine intersection type
     String type = detectIntersection2();
-    if(type=="I"){return;}
+    if(type=="I" || ignoreIntersectionUntil<millis()){return false;}
     // Create an intersection node
     String intersectionUID = createIntersectionID(type);
     Serial.print("Intersection detected: ");
     Serial.println(intersectionUID);
-  ignoreIntersectionUntil=millis()+2000;
+    ignoreIntersectionUntil=millis()+4000;
 
 
 
@@ -634,20 +774,20 @@ void handleIntersectionIfNeeded() {
     mask = mask | 1 << mflag;
     // Handle turn decisions
     driveMotors(0, 0);
-    delay(200);
+
 
     if (type == "L") {
       // Left intersection
       Serial.println("Turning LEFT (L intersection)...");
       mflag= (direction+1)%4;
       mask = mask | 1 << mflag;
-      turnL();
+      //turnL();
     } else if (type == "R") {
       // Right intersection
       Serial.println("Turning RIGHT (R intersection)...");
       mflag= (direction-1)%4;
       mask = mask | 1 << mflag;
-      turnR();
+      //turnR();
     } else if (type == "Tf") {
       // T or + intersection
       Serial.println("Tf intersection detected. Defaulting to LEFT...");
@@ -655,7 +795,7 @@ void handleIntersectionIfNeeded() {
       mask = mask | 1 << mflag;
       mflag= (direction-1)%4;
       mask = mask | 1 << mflag;
-      turnL();
+      //turnL();
     } else if (type == "Tl") {
       // T or + intersection
       Serial.println("Tl intersection detected. Defaulting to LEFT...");
@@ -663,7 +803,7 @@ void handleIntersectionIfNeeded() {
       mask = mask | 1 << mflag;
       mflag= (direction)%4;
       mask = mask | 1 << mflag;
-      turnL();
+      //turnL();
     } else if (type == "Tr") {
       // T or + intersection
       Serial.println("Tr intersection detected. Going forward...");
@@ -683,17 +823,18 @@ void handleIntersectionIfNeeded() {
       mask = mask | 1 << mflag;
       mflag= (direction+3)%4;
       mask = mask | 1 << mflag;
-      turnL();
+      //turnL();
     }  else if (type == "N") {
       // T or + intersection
       Serial.println("N: deadend detected. reversing...");
-      turnL();
-      turnL();
+      //turnL();
+      //turnL();
     } else {
       // Unknown or straight
       Serial.println("Unknown intersection. Going straight...");
     }
   MapNode(intersectionUID,false,mask);
+  return true;
 }
 
 void turnL(){direction++;direction=direction%4;
@@ -714,18 +855,23 @@ void MapNode(const String nodeUID, bool isRFID, int mask){
   delay(200);
   Serial.print("mapping new node, mask is: ");
   Serial.println(mask);
+  if(currentNodeIndex=-1){
+    currentNodeIndex=addNodePtr(nodeUID,isRFID,nullptr,mask);
+    return;
+  }
   unsigned long now = millis();
   unsigned long travelTime = now - segmentStartTime;
   int newNodeIndex = findNodeIndex(nodeUID);
   int from=(direction+2)%4;
   if(newNodeIndex==-1){
-    newNodeIndex=addNodePtr(nodeUID,isRFID,currentNodeIndex,mask);
+    newNodeIndex=addNodePtr(nodeUID,isRFID,&graph[currentNodeIndex],mask);
   } else if(graph[newNodeIndex].ptrs[from] != nullptr){
       handleDuplicate(graph[newNodeIndex].ptrs[from], &graph[currentNodeIndex]);
       return;
   }
   graph[currentNodeIndex].neighbors[direction]=newNodeIndex;
   graph[currentNodeIndex].costs[direction]=travelTime;
+  graph[newNodeIndex].costs[from]=travelTime;
   graph[currentNodeIndex].ptrs[direction]=&(graph[newNodeIndex]);
   currentNodeIndex = newNodeIndex;
 }
@@ -759,6 +905,27 @@ bool doesRFIDexit(String new_uid){
   }
   return false;
 }
+
+Node* newTarget(){
+  queue<Node*> toVisit;
+  toVisit.push(&graph[currentNodeIndex]);
+  unordered_set<Node*> visited;
+  visited.insert(&graph[currentNodeIndex]);
+  while(!toVisit.empty()){
+    Node* curr_node=toVisit.front();
+    toVisit.pop();
+    for(int i=0; i<curr_node->ptrs.size();i++){
+      if(curr_node->ptrs[i]==nullptr){
+        return curr_node;
+      } else if (curr_node->ptrs[i]!=&wall){
+        toVisit.push(curr_node->ptrs[i]);
+        visited.insert(curr_node->ptrs[i]);
+      }
+    }
+  }
+  return &wall;
+}
+
 
 vector<Node*> pathToNode(String target_uid){
   queue<Node*> toVisit; 
