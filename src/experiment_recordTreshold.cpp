@@ -5,6 +5,9 @@
 #include <Firebase_ESP_Client.h>
 #include <MFRC522.h>
 #include <deque>
+#include <unordered_map>
+#include <unordered_set>
+#include <queue>
 
 /* 
 ===============<[PURPOSE OF THIS CODE]>================
@@ -112,61 +115,77 @@ class BoolMemory {
 
 int mask_detected=0;
 const vector<vector<bool>> mask_4way = { 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0}, 
-  {1,1,1,1,1,1}, 
-  {1,1,1,1,1,1}, 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0} };
+  {1,1  ,1,1  ,1,1}, 
+  {1,1  ,1,1  ,1,1}, 
+
+  {0,0  ,1,1  ,0,0}, 
+  {0,0  ,1,1  ,0,0}, 
+
+  {0,0  ,1,1  ,0,0}, 
+  {0,0  ,1,1  ,0,0} };
 const vector<vector<bool>> mask_L = { 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0}, 
-  {1,1,1,1,0,0}, 
-  {1,1,1,1,0,0}, 
-  {0,0,0,0,0,0}, 
-  {0,0,0,0,0,0} };
+  {1,1  ,1,1  ,0,0}, 
+  {1,1  ,1,1  ,0,0}, 
+
+  {0,0  ,0,0  ,0,0}, 
+  {0,0  ,0,0  ,0,0}, 
+
+  {0,0  ,0,0  ,0,0}, 
+  {0,0  ,0,0  ,0,0} };
 const vector<vector<bool>> mask_R = { 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,1,1}, 
-  {0,0,1,1,1,1}, 
-  {0,0,0,0,0,0}, 
-  {0,0,0,0,0,0} };
+  {0,0  ,1,1  ,1,1}, 
+  {0,0  ,1,1  ,1,1}, 
+
+  {0,0  ,0,0  ,0,0}, 
+  {0,0  ,0,0  ,0,0}, 
+
+  {0,0  ,0,0  ,0,0}, 
+  {0,0  ,0,0  ,0,0} };
 const vector<vector<bool>> mask_Tf = { 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0}, 
-  {1,1,1,1,1,1}, 
-  {1,1,1,1,1,1}, 
-  {0,0,0,0,0,0}, 
-  {0,0,0,0,0,0} };
-const vector<vector<bool>> mask_Tr = { 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,1,1}, 
-  {0,0,1,1,1,1}, 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0} };
-const vector<vector<bool>> mask_Tl = { 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0}, 
-  {1,1,1,1,0,0}, 
-  {1,1,1,1,0,0}, 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0} };
+  {1,1  ,1,1  ,1,1}, 
+  {1,1  ,1,1  ,1,1}, 
+
+  {0,0  ,0,0  ,0,0}, 
+  {0,0  ,0,0  ,0,0}, 
+
+  {0,0  ,0,0  ,0,0}, 
+  {0,0  ,0,0  ,0,0} };
+const vector<vector<bool>> mask_Tr = {  
+  {0,0  ,1,1  ,1,1}, 
+  {0,0  ,1,1  ,1,1}, 
+
+  {0,0  ,1,1  ,0,0}, 
+  {0,0  ,1,1  ,0,0}, 
+
+  {0,0  ,1,1  ,0,0}, 
+  {0,0  ,1,1  ,0,0} };
+const vector<vector<bool>> mask_Tl = {  
+  {1,1  ,1,1  ,0,0}, 
+  {1,1  ,1,1  ,0,0}, 
+
+  {0,0  ,1,1  ,0,0}, 
+  {0,0  ,1,1  ,0,0}, 
+
+  {0,0  ,1,1  ,0,0}, 
+  {0,0  ,1,1  ,0,0} };
 const vector<vector<bool>> mask_N = { 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0}, 
-  {0,0,0,0,0,0}, 
-  {0,0,0,0,0,0} };
+  {0,0  ,1,1  ,0,0}, 
+  {0,0  ,1,1  ,0,0},
+
+  {0,0  ,0,0  ,0,0}, 
+  {0,0  ,0,0  ,0,0}, 
+
+  {0,0  ,0,0  ,0,0}, 
+  {0,0  ,0,0  ,0,0} };
 const vector<vector<bool>> mask_I = { 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0}, 
-  {0,0,1,1,0,0} };
+  {0,0  ,1,1  ,0,0}, 
+  {0,0  ,1,1  ,0,0}, 
+
+  {0,0  ,1,1  ,0,0}, 
+  {0,0  ,1,1  ,0,0}, 
+
+  {0,0  ,1,1  ,0,0}, 
+  {0,0  ,1,1  ,0,0} };
 
 
 
@@ -221,13 +240,16 @@ struct Node {
   bool isRFID;
   // adjacency: which other nodes connect to this node?
   std::vector<int> neighbors={-1,-1,-1,-1};
-  vector<Node*> ptrs={NULL,NULL,NULL,NULL};
+  vector<Node*> ptrs={nullptr,nullptr,nullptr,nullptr};
   std::vector<unsigned long> costs;  // travel time in ms
 };
 
 std::vector<Node> graph;            // Our global graph
 
 Node wall;
+
+// TODO do modes for behaviour
+String mode="mapping";  //mapping=traversing the area blindly
 
 
 int currentNodeIndex = -1;          // Index of the current node in the graph
@@ -342,21 +364,29 @@ void setup()
 // --------------- MAIN LOOP ---------------------------
 void loop()
 {
-  // 1. Check for new RFID and create a node if found
+ m1();
+}
+// -----------------------------------------------------
+//                       MODES
+// -----------------------------------------------------
+void m1(){
   if (millis() > ignoreRFIDUntil) {
         checkForRFID();
     }
 
   // 2. Check for intersection (T, L, +, etc.)
   if(millis() > ignoreIntersectionUntil ){
-    handleIntersectionIfNeeded();
+        handleIntersectionIfNeeded();
     }
 
   // 3. Perform line following to stay on track
   handleLineFollow();
-
-  // 4. (Optional) If we've returned to start with no new paths, we could end mapping here.
 }
+
+void m2(){
+
+}
+
 
 // -----------------------------------------------------
 //                 HELPER FUNCTIONS
@@ -682,15 +712,84 @@ void MapNode(const String nodeUID, bool isRFID, int mask){
   // stop motors
   driveMotors(0,0);
   delay(200);
-
+  Serial.print("mapping new node, mask is: ");
+  Serial.println(mask);
   unsigned long now = millis();
   unsigned long travelTime = now - segmentStartTime;
   int newNodeIndex = findNodeIndex(nodeUID);
+  int from=(direction+2)%4;
   if(newNodeIndex==-1){
     newNodeIndex=addNodePtr(nodeUID,isRFID,currentNodeIndex,mask);
+  } else if(graph[newNodeIndex].ptrs[from] != nullptr){
+      handleDuplicate(graph[newNodeIndex].ptrs[from], &graph[currentNodeIndex]);
+      return;
   }
   graph[currentNodeIndex].neighbors[direction]=newNodeIndex;
   graph[currentNodeIndex].costs[direction]=travelTime;
   graph[currentNodeIndex].ptrs[direction]=&(graph[newNodeIndex]);
   currentNodeIndex = newNodeIndex;
+}
+
+void handleDuplicate(Node* trueNode,Node* dupeNode){
+  for(int i=0; i< trueNode->ptrs.size();i++){
+    if(dupeNode->ptrs[i] !=nullptr){
+      if(trueNode->ptrs[i]==nullptr){
+        trueNode->ptrs[i]=dupeNode->ptrs[i];
+        trueNode->neighbors[i]=dupeNode->neighbors[i];
+        trueNode->costs[i]=dupeNode->costs[i];
+        int j=(i+2)%4;
+        dupeNode->ptrs[i]->ptrs[j]=trueNode;
+        dupeNode->ptrs[i]->neighbors[j]=findNodeIndex(trueNode->uid);
+      } 
+      if(trueNode->ptrs[i]!=nullptr && (trueNode->ptrs[i]->uid != dupeNode->ptrs[i]->uid)){
+        handleDuplicate(trueNode->ptrs[i],dupeNode->ptrs[i]);
+      }
+    }
+  }
+  //add here function to delete the dupe node to free up space
+  //will fuck up the neighbour arrays due to reference by index
+  //but that can be removed entirely
+}
+
+bool doesRFIDexit(String new_uid){
+  for(Node i : graph){
+    if(i.uid==new_uid){
+      return true;
+    }
+  }
+  return false;
+}
+
+vector<Node*> pathToNode(String target_uid){
+  queue<Node*> toVisit; 
+  unordered_map<Node*, Node*> parentMap; 
+  // To store the parent of each node 
+  unordered_set<Node*> visited;
+  toVisit.push(&graph[currentNodeIndex]);
+  visited.insert(&graph[currentNodeIndex]);
+  parentMap[&graph[currentNodeIndex]] = nullptr;
+  ///while
+  while(!toVisit.empty()){
+    Node* curr_node=toVisit.front();
+    toVisit.pop();
+
+    if(curr_node->uid ==target_uid){
+      vector<Node*> path;
+      for (Node* node = curr_node;node!=nullptr;node=parentMap[node]){
+        path.push_back(node);
+      }
+      reverse(path.begin(), path.end());
+      return path;
+    }
+
+    for (Node* ptr_neighbor : curr_node->ptrs){
+        if (ptr_neighbor!=nullptr && ptr_neighbor!=&wall){
+          if (visited.find(ptr_neighbor) == visited.end()){
+            toVisit.push(ptr_neighbor);
+            visited.insert(ptr_neighbor);
+            parentMap[ptr_neighbor] = curr_node;
+          }
+        }
+    }
+  }
 }
