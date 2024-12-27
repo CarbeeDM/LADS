@@ -396,6 +396,7 @@ void readyForOrder(){
   String targetInput;
   targetpath=pathToNode(targetInput);
   mode=4;
+  rstVars();
   return;
   } else {
     Serial.println("I have mapped everything I saw");
@@ -409,12 +410,14 @@ void mapMaze(){
   if(handleIntersectionIfNeeded() || checkForRFID()){
   if(knownNode(&graph[currentNodeIndex])){
     target=newTarget();
+    rstVars();
     if(target==&wall){
       mode=3;
       return;
     }
     targetpath=pathToNode(target->uid);
     mode=2;
+    return;
   } else {
     for(int i=0; i< graph[currentNodeIndex].ptrs.size();i++){
       if(graph[currentNodeIndex].ptrs[i]==nullptr){
@@ -453,6 +456,7 @@ void goToNode(vector<Node*> path){
       }
       if(path.empty()){
         Serial.println("I have arrived");
+        rstVars();
         if(mode==2){
           mode=1;
         } else {
@@ -488,6 +492,11 @@ void goToNode(vector<Node*> path){
 void wander(){
   handleLineFollow();
   if(handleIntersectionIfNeeded() || checkForRFID()){
+    if(currentNodeIndex>-1){
+      mode=1;
+      rstVars();
+      return;
+    }
     for(int i=0; i< graph[currentNodeIndex].ptrs.size();i++){
       if(graph[currentNodeIndex].ptrs[i]!=&wall){
         switch (direction-i)
@@ -518,7 +527,10 @@ void wander(){
 // -----------------------------------------------------
 //                 HELPER FUNCTIONS
 // -----------------------------------------------------
-
+void rstVars(){
+  ignoreIntersectionUntil=millis();
+  ignoreRFIDUntil=millis();
+}
 bool knownNode(const Node* n){
   for(int i=0;i<n->ptrs.size();i++){
     if(n->ptrs[i]==nullptr){
