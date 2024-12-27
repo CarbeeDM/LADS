@@ -268,17 +268,33 @@ unsigned long ignoreIntersectionUntil = 0;
 // ------------------- FUNCTION DECLARATIONS -----------
 int  findNodeIndex(const String& uid); //reused as is
 int  addNode(const String& uid, bool isRFID);//reused as is
-int  addNodePtr(const String uid, bool isRFID, int prev_ind, int mask);//new
-void driveMotors(int leftSpeed, int rightSpeed); //reused as is
-void handleLineFollow(); //reused as is
+int  addNodePtr(const String uid, bool isRFID, Node* prev_n, int mask);//new
+
 bool checkForRFID();//tweaked
-void MapNode(const String nodeUID, bool isRFID, int mask);//new
-
-String detectIntersection2(); //new
-
-String createIntersectionID(char type); //reused as is
+bool doesRFIDexist(String new_uid); //new
+bool obstacleDetection();//reused as is
 bool handleIntersectionIfNeeded();//tweaked
 
+void driveMotors(int leftSpeed, int rightSpeed); //reused as is
+void handleLineFollow(); //reused as is
+void MapNode(const String nodeUID, bool isRFID, int mask);//new
+void rstVars();
+void turnL();//tweaked
+void turnR();//tweaked
+
+String detectIntersection2(); //new
+String createIntersectionID(char type); //reused as is
+
+Node* newTarget(); //new
+
+vector<Node*> pathToNode(String target_uid); //new
+
+//----mode functions:
+void m1(); //technically new
+void wander(); //new
+void mapMaze(); //new
+void readyForOrder(); //new
+void goToNode(vector<Node*> path); //new
 
 // --------------- SETUP -------------------------------
 void setup()
@@ -364,10 +380,13 @@ case 2:
   goToNode(targetpath);
   break;
 case 3:
-  wander();
+  readyForOrder();
   break;
 case 4:
-  wander();
+  goToNode(targetpath);
+  break;
+case 99:
+  m1();
   break;
 default:
   break;
@@ -528,8 +547,8 @@ void wander(){
 //                 HELPER FUNCTIONS
 // -----------------------------------------------------
 void rstVars(){
-  ignoreIntersectionUntil=millis();
-  ignoreRFIDUntil=millis();
+  ignoreIntersectionUntil=0;
+  ignoreRFIDUntil=0;
 }
 bool knownNode(const Node* n){
   for(int i=0;i<n->ptrs.size();i++){
@@ -909,7 +928,7 @@ void handleDuplicate(Node* trueNode,Node* dupeNode){
   //but that can be removed entirely
 }
 
-bool doesRFIDexit(String new_uid){
+bool doesRFIDexist(String new_uid){
   for(Node i : graph){
     if(i.uid==new_uid){
       return true;
