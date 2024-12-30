@@ -411,6 +411,7 @@ void setup()
   delay(1000);
 
   segmentStartTime = millis(); // start measuring travel time from the initial node
+  ignoreIntersectionUntil=millis()+2000;
   
 }
 
@@ -419,7 +420,9 @@ void loop()
 {
   handleLineFollow();
 
-  handleIntersectionIfNeeded();
+  if(millis() > ignoreIntersectionUntil ){
+        handleIntersectionIfNeeded();
+    }
 }
 // -----------------------------------------------------
 //                       MODES
