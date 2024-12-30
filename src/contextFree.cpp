@@ -811,7 +811,7 @@ bool handleIntersectionIfNeeded() {
     String intersectionUID = createIntersectionID(type);
     Serial.print("Intersection detected: ");
     Serial.println(intersectionUID);
-    ignoreIntersectionUntil=millis()+1000;
+    ignoreIntersectionUntil=millis()+2000;
 
     prevDirection=direction;
 
@@ -1011,7 +1011,7 @@ Node* newTarget(){
 
 
 vector<Node*> pathToNode(String target_uid){
-  queue<Node*> toVisit; 
+  queue<Node*> toVisit;
   unordered_map<Node*, Node*> parentMap; 
   // To store the parent of each node 
   unordered_set<Node*> visited;
@@ -1043,4 +1043,5 @@ vector<Node*> pathToNode(String target_uid){
         }
     }
   }
+  vector<Node*> nopath={}; return nopath;
 }

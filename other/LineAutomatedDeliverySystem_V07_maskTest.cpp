@@ -45,14 +45,14 @@ data acquired:
 */
 using namespace std;
 const vector<vector<int>> weights={ 
-  {2,1  ,1,1  ,1,2}, 
-  {2,1  ,1,1  ,1,2}, 
+  {10,1  ,1,1  ,1,10}, 
+  {10,1  ,1,1  ,1,10}, 
 
-  {2,1  ,1,1  ,1,2}, 
-  {2,1  ,1,1  ,1,2}, 
+  {10,1  ,1,1  ,1,10}, 
+  {10,1  ,3,3  ,1,10}, 
 
-  {2,1  ,1,1  ,1,2}, 
-  {3,3  ,3,3  ,3,3} };
+  {10,1  ,5,5  ,1,10}, 
+  {10,10  ,10,10  ,10,10} };
 class BoolMemory { 
   private: 
     deque<std::vector<bool>> memory;
