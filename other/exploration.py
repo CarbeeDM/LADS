@@ -1,156 +1,258 @@
-import matplotlib.pyplot as plt
+#!/usr/bin/env python3
 
-# Node class to represent intersections
+###############################################################################
+#  Node class: Each node has up to 4 absolute-direction neighbors: N, E, S, W.
+#  We store them in a dict: node.neighbors = {'N': None, 'E': None, 'S': None, 'W': None}
+#
+#  We'll also store a "label" like 'S1', 'R2', 'L3', 'T4', 'U1', etc.
+###############################################################################
 class Node:
-    def __init__(self, x, y, name):
-        self.x = x
-        self.y = y
-        self.name = name
+    def __init__(self, label):
+        self.label = label
+        self.neighbors = {'N': None, 'E': None, 'S': None, 'W': None}
 
-# Plotting function for the robot map
-def plot_map(nodes, edges, directions_taken, colors):
-    """
-    Visualize the path using matplotlib.
-      - nodes: list of Node objects
-      - edges: list of (iA, iB) index pairs
-      - directions_taken: list of direction labels for each edge
-      - colors: list of color strings for each node
-    """
-    plt.figure(figsize=(8, 8))
-    
-    # Draw edges
-    for idx, (iA, iB) in enumerate(edges):
-        xA, yA = nodes[iA].x, nodes[iA].y
-        xB, yB = nodes[iB].x, nodes[iB].y
-        plt.plot([xA, xB], [yA, yB], 'k-', linewidth=2)
+    def __repr__(self):
+        return f"Node({self.label})"
 
-        # Annotate directions
-        mid_x, mid_y = (xA + xB) / 2, (yA + yB) / 2
-        direction_str = directions_taken[idx]
-        plt.text(mid_x, mid_y, direction_str, fontsize=10, color='blue',
-                 ha='center', va='center', 
-                 bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="blue", alpha=0.5))
 
-    # Draw nodes
-    for i, node in enumerate(nodes):
-        x, y = node.x, node.y
-        plt.plot(x, y, 'o', color=colors[i], markersize=10)
-        plt.text(x, y, node.name, fontsize=10, ha='right', va='bottom')
+###############################################################################
+#  RobotNavigator
+#    - We push (command, node) onto self.stack
+#    - In backtrace mode, we interpret triples (Y, U, X) and merge the Y-node
+#      into a newly created X-node, then forcibly move the robot to the new node.
+###############################################################################
+class RobotNavigator:
+    def __init__(self):
+        self.stack = []             # Will store tuples (cmd, node)
+        self.backtrace_mode = False
 
-    plt.title("Robot Logical Path (DFS Exploration)")
-    plt.axis('equal')
-    plt.grid(True)
-    plt.show()
+        # Keep numeric counters for each type of node
+        self.node_counters = {'S': 0, 'R': 0, 'L': 0, 'T': 0, 'U': 0}
 
-# Orientation helpers
-def turn_right(orientation):
-    mapping = {'N': 'E', 'E': 'S', 'S': 'W', 'W': 'N'}
-    return mapping[orientation]
+        # Current node and direction
+        self.current_node = None
+        self.robot_direction = 'N'  # start facing North by default
 
-def turn_left(orientation):
-    mapping = {'N': 'W', 'W': 'S', 'S': 'E', 'E': 'N'}
-    return mapping[orientation]
+        # Direction utilities
+        self.left_of  = {'N': 'W', 'W': 'S', 'S': 'E', 'E': 'N'}
+        self.right_of = {'N': 'E', 'E': 'S', 'S': 'W', 'W': 'N'}
+        self.back_of  = {'N': 'S', 'S': 'N', 'E': 'W', 'W': 'E'}
 
-def turn_u(orientation):
-    mapping = {'N': 'S', 'S': 'N', 'E': 'W', 'W': 'E'}
-    return mapping[orientation]
+    def reset(self):
+        self.stack.clear()
+        self.backtrace_mode = False
+        self.current_node = None
+        self.robot_direction = 'N'
 
-# Main Robot Mapper Class
-class DFSRobotMapper:
-    def __init__(self, example_reads):
-        self.nodes = []  # List of all nodes
-        self.edges = []  # List of edges (iA, iB)
-        self.edge_directions = []  # Directions for edges
-        self.colors = []  # Colors for nodes
-        self.visited_edges = set()  # To prevent revisiting edges
-        self.example_reads = example_reads  # Sensor data
-        self.cost_scale = 1.0 / 1000.0  # Scale for distance
-        self.color_map = {'S': 'pink', 'R': 'green', 'T': 'yellow', 'U': 'orange', 'L': 'purple'}
-        self.orientation = 'N'  # Start facing North
-        self.current_index = None  # Current node index
-        self.start_node_index = None  # Start node
+    # -------------------------------------------------------------------------
+    # process_command
+    # -------------------------------------------------------------------------
+    def process_command(self, cmd):
+        if cmd == 'S':
+            print(f"\n[Robot] Received S (start) -> Resetting stack and navigator state.")
+            self.reset()
+            nodeS = self.make_new_node('S')
+            self.current_node = nodeS
+            self.stack.append(('S', nodeS))
+            print(f"[Robot] Decision: Start at new location => {nodeS}, facing North")
+            return
 
-    def add_node(self, x, y, label):
-        """Add a node to the graph."""
-        idx = len(self.nodes)
-        self.nodes.append(Node(x, y, label))
-        self.colors.append(self.color_map.get(label[0], 'cyan'))  # Assign a color
-        return idx
+        if not self.backtrace_mode:
+            # Normal Mode
+            if cmd in ('L', 'R', 'T'):
+                new_node = self.make_new_node(cmd)
+                self.link_via_direction(new_node)
+                self.stack.append((cmd, new_node))
 
-    def add_edge(self, iA, iB, direction):
-        """Add an edge to the graph."""
-        self.edges.append((iA, iB))
-        self.edge_directions.append(direction)
-        self.visited_edges.add((min(iA, iB), max(iA, iB)))
+                if cmd == 'L':
+                    print("[Robot] Decision: Move Left.")
+                    self.robot_direction = self.left_of[self.robot_direction]
+                elif cmd == 'R':
+                    print("[Robot] Decision: Move Right.")
+                    self.robot_direction = self.right_of[self.robot_direction]
+                elif cmd == 'T':
+                    print("[Robot] Decision: T-junction -> Move Left (by policy).")
+                    self.robot_direction = self.left_of[self.robot_direction]
 
-    def is_edge_visited(self, iA, iB):
-        """Check if an edge is visited."""
-        return (min(iA, iB), max(iA, iB)) in self.visited_edges
+                print(f"[Robot] Now facing {self.robot_direction}")
+                return
 
-    def move(self, distance):
-        """Move in the current orientation."""
-        cur_x, cur_y = self.nodes[self.current_index].x, self.nodes[self.current_index].y
-        if self.orientation == 'N':
-            return cur_x, cur_y + distance
-        elif self.orientation == 'E':
-            return cur_x + distance, cur_y
-        elif self.orientation == 'S':
-            return cur_x, cur_y - distance
-        elif self.orientation == 'W':
-            return cur_x - distance, cur_y
-        return cur_x, cur_y
+            elif cmd == 'U':
+                print(f"\n[Robot] Received U -> Enter backtrace mode.")
+                new_node = self.make_new_node('U')
+                self.link_via_direction(new_node)
+                self.stack.append(('U', new_node))
 
-    def explore(self):
-        """Perform DFS-style exploration based on sensor data."""
-        for i, (label, cost) in enumerate(self.example_reads):
-            distance = cost * self.cost_scale
+                self.backtrace_mode = True
+                self.robot_direction = self.back_of[self.robot_direction]
+                print(f"[Robot] Turned 180°, now facing {self.robot_direction}")
+                return
 
-            if i == 0:  # Starting node
-                cur_x, cur_y = 0, 0
-                self.start_node_index = self.add_node(cur_x, cur_y, f"{label}{i}")
-                self.current_index = self.start_node_index
-                continue
+        else:
+            # Backtrace Mode => interpret triple (Y, U, X)
+            if len(self.stack) < 2:
+                # Not enough for a triple
+                new_node = self.make_new_node(cmd)
+                self.stack.append((cmd, new_node))
+                print(f"[Robot] (Backtrace) Not enough in stack for triple, pushed {cmd}")
+                return
+            else:
+                (u_cmd, u_node) = self.stack[-1]
+                if u_cmd != 'U':
+                    new_node = self.make_new_node(cmd)
+                    self.stack.append((cmd, new_node))
+                    print("[Robot] (Backtrace) Unexpected top, pushing:", cmd)
+                    return
 
-            # Update orientation based on the label
-            if label == 'R':
-                self.orientation = turn_right(self.orientation)
-            elif label == 'L':
-                self.orientation = turn_left(self.orientation)
-            elif label == 'U':
-                self.orientation = turn_u(self.orientation)
+                (y_cmd, y_node) = self.stack[-2]
+                triple = (y_cmd, 'U', cmd)
 
-            # Move forward based on the distance
-            new_x, new_y = self.move(distance)
-            new_node_label = f"{label}{i}"
-            new_node_index = self.add_node(new_x, new_y, new_node_label)
+                decision, error, remain_backtrace = self.interpret_triple(triple)
+                if error:
+                    print("[Robot] ERROR: Map is corrupted for triple:", triple)
+                    return
 
-            # Add an edge
-            if not self.is_edge_visited(self.current_index, new_node_index):
-                self.add_edge(self.current_index, new_node_index, label)
+                if decision is not None:
+                    print(f"[Robot] (Backtrace) Triple {triple} -> Decision: {decision}")
+                    # Merge y_node => new X-node
+                    self.handle_merge_in_backtrace(y_node, cmd)
 
-            # If we sense the start node (S), connect back to it
-            if label == 'S' and i != 0:
-                self.add_edge(new_node_index, self.start_node_index, "BackToStart")
+                    # Turn if needed
+                    if decision == 'L':
+                        self.robot_direction = self.left_of[self.robot_direction]
+                    elif decision == 'R':
+                        self.robot_direction = self.right_of[self.robot_direction]
+                    elif decision == 'forward':
+                        pass
+                    print(f"[Robot] Now facing {self.robot_direction}")
 
-            # Update the current node
-            self.current_index = new_node_index
+                # Pop the (U, u_node) and (y_cmd, y_node)
+                self.stack.pop()
+                self.stack.pop()
 
-    def run(self):
-        """Run the mapping and visualize."""
-        self.explore()
-        plot_map(self.nodes, self.edges, self.edge_directions, self.colors)
+                if remain_backtrace:
+                    self.stack.append(('U', u_node))
+                else:
+                    self.backtrace_mode = False
 
-# Example sensor data
-example_reads = [
-    ('S', 0),    # Start
-    ('R', 2000), # Right turn
-    ('T', 3000), # T-intersection
-    ('U', 1500), # U-turn
-    ('L', 2000), # Left turn (from T)
-    ('S', 0)     # Revisit start node
-]
+    # -------------------------------------------------------------------------
+    # interpret_triple
+    # -------------------------------------------------------------------------
+    def interpret_triple(self, triple):
+        (Y, U, X) = triple
+        if (Y, U, X) == ('R', 'U', 'L'):
+            return ('L', False, True)
+        elif (Y, U, X) == ('R', 'U', 'T'):
+            return ('R', False, False)
+        elif (Y, U, X) == ('L', 'U', 'R'):
+            return ('R', False, True)
+        elif (Y, U, X) == ('L', 'U', 'L'):
+            return (None, True, True)
+        elif (Y, U, X) == ('L', 'U', 'T'):
+            return ('L', False, False)
+        elif (Y, U, X) == ('T', 'U', 'T'):
+            return (None, True, True)
+        elif (Y, U, X) == ('T', 'U', 'R'):
+            return (None, True, True)
+        elif (Y, U, X) == ('T', 'U', 'L'):
+            return ('forward', False, False)
+        else:
+            return (None, True, True)
 
-# Main execution
+    # -------------------------------------------------------------------------
+    # handle_merge_in_backtrace
+    #
+    # IMPORTANT FIX: after merging, we forcibly set current_node = new_node
+    # so the robot "stands" on the newly created node, not the old one (like U1).
+    # -------------------------------------------------------------------------
+    def handle_merge_in_backtrace(self, old_node, cmdX):
+        new_node = self.make_new_node(cmdX)
+        self.merge_two_nodes(old_node, new_node)
+        # Force the robot to stand on new_node after the merge
+        self.current_node = new_node
+
+    # -------------------------------------------------------------------------
+    # make_new_node
+    # -------------------------------------------------------------------------
+    def make_new_node(self, cmd):
+        self.node_counters[cmd] += 1
+        label = f"{cmd}{self.node_counters[cmd]}"
+        return Node(label)
+
+    # -------------------------------------------------------------------------
+    # link_via_direction
+    # -------------------------------------------------------------------------
+    def link_via_direction(self, new_node):
+        if self.current_node is None:
+            self.current_node = new_node
+            return
+        d = self.robot_direction
+        self.current_node.neighbors[d] = new_node
+        opp = self.back_of[d]
+        new_node.neighbors[opp] = self.current_node
+        self.current_node = new_node
+
+    # -------------------------------------------------------------------------
+    # merge_two_nodes
+    # -------------------------------------------------------------------------
+    def merge_two_nodes(self, old_node, new_node):
+        print(f"[Robot] Merging {old_node.label} into {new_node.label}")
+        for d in ('N','E','S','W'):
+            if new_node.neighbors[d] is None and old_node.neighbors[d] is not None:
+                new_node.neighbors[d] = old_node.neighbors[d]
+                opp = self.back_of[d]
+                old_node.neighbors[d].neighbors[opp] = new_node
+
+        # If we were on old_node, move to new_node (no longer strictly needed, 
+        # because handle_merge_in_backtrace does it unconditionally, but we keep it anyway)
+        if self.current_node == old_node:
+            self.current_node = new_node
+
+        old_node.neighbors = {'N': None, 'E': None, 'S': None, 'W': None}
+
+    # -------------------------------------------------------------------------
+    # debug_print_graph
+    # -------------------------------------------------------------------------
+    def debug_print_graph(self, node, visited=None):
+        if visited is None:
+            visited = set()
+        if not node or node in visited:
+            return
+        visited.add(node)
+        print(f"  {node.label} neighbors:")
+        for d in ('N','E','S','W'):
+            nbr = node.neighbors[d]
+            if nbr:
+                print(f"    {d} -> {nbr.label}")
+        for d in ('N','E','S','W'):
+            nbr = node.neighbors[d]
+            if nbr:
+                self.debug_print_graph(nbr, visited)
+
+
+###############################################################################
+# Simple main
+###############################################################################
+def main():
+    nav = RobotNavigator()
+    print("Enter commands one at a time: [S, L, R, T, U], or 'Q' to quit.")
+    print("The robot always starts facing North when 'S' is read.\n")
+
+    while True:
+        cmd = input("Command> ").strip().upper()
+        if cmd == 'Q':
+            print("Exiting.")
+            break
+        elif cmd in ['S', 'L', 'R', 'T', 'U']:
+            nav.process_command(cmd)
+            print("[Robot] Stack:", nav.stack)
+            print("[Robot] Current Node:", nav.current_node)
+            print("[Robot] Current Direction:", nav.robot_direction)
+            print("Graph from current node:")
+            nav.debug_print_graph(nav.current_node)
+            print("-----------------------------------------------------------")
+        else:
+            print("Invalid command. Please enter one of [S, L, R, T, U] or 'Q'.")
+
 if __name__ == "__main__":
-    mapper = DFSRobotMapper(example_reads)
-    mapper.run()
+    main()
