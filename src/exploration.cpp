@@ -396,10 +396,18 @@ void wander(){
 // -----------------------------------------------------
 //                 HELPER FUNCTIONS
 // -----------------------------------------------------
+
+/**
+ * @brief set ignore vars to 0
+ */
 void rstVars(){
   ignoreIntersectionUntil=0;
   ignoreRFIDUntil=0;
 }
+
+/**
+ * @brief check if a given node has all its corners mapped out completely
+ */
 bool knownNode(Node* n){
   for(int i=0;i<n->ptrs.size();i++){
     if(n->ptrs[i]==nullptr){
@@ -424,7 +432,6 @@ int findNodeIndex(const String& uid) {
 // /**
 //  * @brief Add a new node to the graph
 //  */
-
 int addNodePtr(const String uid, bool isRFID, int mask){
   Node n;
   n.uid = uid;
@@ -444,6 +451,10 @@ int addNodePtr(const String uid, bool isRFID, int mask){
   graph.push_back(n);
   return graph.size() - 1;
 }
+/**
+ * @brief MUST be called before updating current_node_ptr.
+ * take in the new node, create a connection between it and the current_node_ptr
+ */
 void link_via_direction(Node* new_node, unsigned long cost){
   if(current_Node_Ptr==nullptr){
     return;
@@ -535,7 +546,7 @@ void handleLineFollow()
 }
 
 /**
- * @brief Check if a new RFID card is present; if new, create a node
+ * @brief Check if a new RFID card is present, update ignoreRFIDuntil
  */
 bool checkForRFID()
 {
@@ -551,15 +562,6 @@ bool checkForRFID()
       rfid.PICC_HaltA();
       rfid.PCD_StopCrypto1();
 
-      int mask=0;
-      int mflag;
-      mflag= (direction)%4;
-      mask = mask | 1 << mflag;
-      mflag= (direction+2)%4;
-      mask = mask | 1 << mflag;
-      //MapNode(newUID,true,mask);
-      
-
       
       return true;
     }
@@ -567,7 +569,11 @@ bool checkForRFID()
   return false;
 }
 
-
+/**
+ * @brief returns a T, L, R, or U based on intersection.
+ * Returns I if no intersection.
+ * Updates ignoreIntersectionUntil
+ */
 String detectIntersection() {
   if(millis() < ignoreIntersectionUntil ){
         return "I";
@@ -606,7 +612,7 @@ String detectIntersection() {
 }
 
 /**
- * @brief Create an intersection ID string, e.g. "INT_0_T", "INT_1_L"
+ * @brief Create an ID string, e.g. "INT_0_T", "INT_1_L"
  */
 String createIntersectionID(String type, bool rfid)
 { 
@@ -623,7 +629,8 @@ String createIntersectionID(String type, bool rfid)
 }
 
 /**
- * @brief If intersection is detected, stop, map it, decide a turn
+ * @brief If intersection is detected process_cmd().
+ *  Only for exploration phase
  */
 bool handleIntersectionIfNeeded() {
     
@@ -646,7 +653,9 @@ void turnR(){direction--;direction=direction%4;
       delay(500);
       }
 
-
+/**
+ * @brief Add a new node or do backtracking. S for startNode.
+ */
 void process_cmd(String cmd){
     if(cmd=="S"){
       if(current_Node_Ptr==nullptr){
@@ -782,6 +791,10 @@ void process_cmd(String cmd){
     }
   }
 }
+
+/**
+ * @brief During backtracing, handle triplets.
+ */
 tuple<String, bool, bool> interpret_triple(tuple<String, String, String> triple) {
   String Y, U, X;
   tie(Y, U, X) = triple; 
@@ -811,6 +824,10 @@ tuple<String, bool, bool> interpret_triple(tuple<String, String, String> triple)
   }
 }
 
+/**
+ * @brief copy oldNode's info onto trueNode.
+ * update the neighbors of oldNode.
+ */
 void merge_two_nodes(Node* trueNode,Node* oldNode){
   for(int i=0; i< trueNode->ptrs.size();i++){
     if(oldNode->ptrs[i] !=nullptr){
@@ -827,6 +844,9 @@ void merge_two_nodes(Node* trueNode,Node* oldNode){
 
 }
 
+/**
+ * @brief check if a given rfid exists in the graph
+ */
 bool doesRFIDexist(String new_uid){
   for(Node i : graph){
     if(i.uid==new_uid){
@@ -836,6 +856,10 @@ bool doesRFIDexist(String new_uid){
   return false;
 }
 
+/**
+ * @brief find a nodePtr that doesnt have all its neighbors mapped.
+ * returns &wall if all nodes have been mapped.
+ */
 Node* newTarget(){
   queue<Node*> toVisit;
   toVisit.push(current_Node_Ptr);
@@ -856,7 +880,10 @@ Node* newTarget(){
   return &wall;
 }
 
-
+/**
+ * @brief returns a ptr list of nodes that lead to a target_uid.
+ * [current_node*, ptr1, ptr2, ptr3, target_uid*]
+ */
 vector<Node*> pathToNode(String target_uid){
   queue<Node*> toVisit;
   unordered_map<Node*, Node*> parentMap; 
