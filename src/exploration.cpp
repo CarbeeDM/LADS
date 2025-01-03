@@ -91,6 +91,7 @@ int intersectionCounter = 0;        // Generate unique intersection IDs
 unsigned long segmentStartTime = 0; // measure travel time between nodes
 unsigned long ignoreRFIDUntil = 0;      // ignore RFID reads until this time
 unsigned long ignoreIntersectionUntil = 0;
+String last_read_tagUID = "";
 // ------------------- FUNCTION DECLARATIONS -----------
 int  findNodeIndex(const String& uid); //reused as is
 
@@ -114,7 +115,7 @@ void link_via_direction(Node* n, unsigned long cost);
 void process_cmd(String cmd);
 
 String detectIntersection(); //new
-String createIntersectionID(String type); //reused as is
+String createIntersectionID(String type, bool rfid); //reused as is
 
 Node* newTarget(); //new
 
@@ -507,11 +508,13 @@ bool checkForRFID()
     ignoreRFIDUntil = millis() + 2000;
     if (rfid.PICC_ReadCardSerial()) {
       // Build the UID string
-      String newUID = "";
+      last_read_tagUID = "";
       for (int i = 0; i < rfid.uid.size; i++) {
-        newUID += String(rfid.uid.uidByte[i], HEX);
+        last_read_tagUID += String(rfid.uid.uidByte[i], HEX);
       }
-      newUID.toUpperCase();
+      last_read_tagUID.toUpperCase();
+      rfid.PICC_HaltA();
+      rfid.PCD_StopCrypto1();
 
       int mask=0;
       int mflag;
@@ -520,11 +523,10 @@ bool checkForRFID()
       mflag= (direction+2)%4;
       mask = mask | 1 << mflag;
       //MapNode(newUID,true,mask);
-
+      process_cmd("P");
       
 
-      rfid.PICC_HaltA();
-      rfid.PCD_StopCrypto1();
+      
       return true;
     }
   }
@@ -568,14 +570,18 @@ String detectIntersection() {
 /**
  * @brief Create an intersection ID string, e.g. "INT_0_T", "INT_1_L"
  */
-String createIntersectionID(String type)
-{
+String createIntersectionID(String type, bool rfid)
+{ 
+  if(rfid){
+    return last_read_tagUID;
+  }else{
   String id = "INT_";
   id += String(intersectionCounter++);
   id += "_";
   // append the type code
   id += type; 
   return id;
+  }
 }
 
 /**
@@ -587,10 +593,7 @@ bool handleIntersectionIfNeeded() {
     if(ignoreIntersectionUntil>millis()){Serial.println("waiting...");return false;}
     String type = detectIntersection();
     if(type=="I"){return false;}
-    // Create an intersection node
-    String intersectionUID = createIntersectionID(type);
-    Serial.print("Intersection detected: ");
-    Serial.println(intersectionUID);
+    Serial.print("Intersection detected.");
     ignoreIntersectionUntil=millis()+2000;
     process_cmd(type);
   return true;
@@ -607,7 +610,12 @@ void turnR(){direction--;direction=direction%4;
 
 
 void process_cmd(String cmd){
-    String intersectionUID = createIntersectionID(cmd);
+    
+    bool isRFID=false;
+    if(cmd=="P"){
+      isRFID=true;
+    }
+    String UID = createIntersectionID(cmd, isRFID);
     prevDirection=direction;
     int newNodeIndex=-1;
     int mask=0;
@@ -646,11 +654,13 @@ void process_cmd(String cmd){
 
       turnL();
       turnL();
+    } else if (cmd == "P") {
+      Serial.println("RFID tag detected, continuing forward");
     } else {
       // Unknown or straight
       Serial.println("Unknown intersection. Going straight...");
     }
-      newNodeIndex=addNodePtr(intersectionUID, false, mask);
+      newNodeIndex=addNodePtr(UID, isRFID, mask);
       link_via_direction(&graph[newNodeIndex], 1);
       current_Node_Ptr=&graph[newNodeIndex];
       tuple <String, Node*> tup=make_tuple(cmd,current_Node_Ptr);
@@ -658,7 +668,7 @@ void process_cmd(String cmd){
 
   } else {//backtrack
     if(cmd_stack.size()<2){
-      newNodeIndex=addNodePtr(intersectionUID, false, mask);
+      newNodeIndex=addNodePtr(UID, isRFID, mask);
       current_Node_Ptr=&graph[newNodeIndex];
       tuple <String, Node*> tup=make_tuple(cmd,current_Node_Ptr);
       cmd_stack.push_back(tup);
@@ -667,7 +677,7 @@ void process_cmd(String cmd){
     } else{
     tuple <String, Node*> u_tuple=cmd_stack[cmd_stack.size()-1];
     if(get<0>(u_tuple)!="U"){
-      newNodeIndex=addNodePtr(intersectionUID, false, mask);
+      newNodeIndex=addNodePtr(UID, isRFID, mask);
       current_Node_Ptr=&graph[newNodeIndex];
       tuple <String, Node*> tup=make_tuple(cmd,current_Node_Ptr);
       cmd_stack.push_back(tup);
@@ -688,7 +698,7 @@ void process_cmd(String cmd){
     if (decision!=""){
       Serial.print("backtrace decision:");
       Serial.println(decision);
-      newNodeIndex=addNodePtr(intersectionUID, false, mask);
+      newNodeIndex=addNodePtr(UID, isRFID, mask);
       current_Node_Ptr=&graph[newNodeIndex];
       merge_two_nodes(current_Node_Ptr, get<1>(y_tuple));
       //merge in backtrace(y_node,cmd)
@@ -731,6 +741,8 @@ tuple<String, bool, bool> interpret_triple(tuple<String, String, String> triple)
     return make_tuple("", true, true);
   } else if (tie(Y, U, X) == make_tuple("T", "U", "L")) {
     return make_tuple("forward", false, false);
+  } else if (tie(Y, U, X) == make_tuple("P", "U", "P")) {
+    return make_tuple("forward", false, true);
   } else {
     return make_tuple("", true, true);
   }
