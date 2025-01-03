@@ -125,6 +125,7 @@ tuple<String, bool, bool> interpret_triple(tuple<String, String, String> triple)
 
 //----mode functions:
 void m1(); //technically new
+void ExplorationPhase();
 void wander(); //new
 void mapMaze(); //new
 void readyForOrder(); //new
@@ -196,22 +197,52 @@ void setup()
   delay(1000);
 
   segmentStartTime = millis(); // start measuring travel time from the initial node
-  ignoreIntersectionUntil=millis()+2000;
+  ignoreIntersectionUntil=millis();
   
 }
 
 // --------------- MAIN LOOP ---------------------------
 void loop()
 {
+switch (mode)
+{
+case 0:
+  ExplorationPhase();
+  break;
+case 1:
+  mapMaze();
+  break;
+case 2:
+  goToNode(targetpath);
+  break;
+case 3:
+  readyForOrder();
+  break;
+case 4:
+  goToNode(targetpath);
+  break;
+case 99:
+  m1();
+  break;
+default:
+  break;
+}
+}
+// -----------------------------------------------------
+//                       MODES
+// -----------------------------------------------------
+void ExplorationPhase(){
   handleLineFollow();
 
   if(millis() > ignoreIntersectionUntil ){
         handleIntersectionIfNeeded();
     }
+  if(millis()> ignoreRFIDUntil){
+        if(checkForRFID()){
+          process_cmd("P");
+        };
+    }
 }
-// -----------------------------------------------------
-//                       MODES
-// -----------------------------------------------------
 void m1(){
   if (millis() > ignoreRFIDUntil) {
         checkForRFID();
@@ -243,8 +274,8 @@ void readyForOrder(){
 void mapMaze(){
   handleLineFollow();
   Node* target;
-  if(handleIntersectionIfNeeded() || checkForRFID()){
-
+  if((detectIntersection()!="I") || checkForRFID()){
+  current_Node_Ptr=current_Node_Ptr->ptrs[direction];
   if(knownNode(current_Node_Ptr)){
     target=newTarget();
     rstVars();
@@ -287,7 +318,8 @@ void goToNode(vector<Node*> path){
 
     handleLineFollow();
 
-    if(handleIntersectionIfNeeded() || checkForRFID()){
+    if((detectIntersection()!="I") || checkForRFID()){
+      current_Node_Ptr=current_Node_Ptr->ptrs[direction];
       if(current_Node_Ptr==*path.begin()){
         path.erase(path.begin());
       }
@@ -413,6 +445,9 @@ int addNodePtr(const String uid, bool isRFID, int mask){
   return graph.size() - 1;
 }
 void link_via_direction(Node* new_node, unsigned long cost){
+  if(current_Node_Ptr==nullptr){
+    return;
+  }
   current_Node_Ptr->ptrs[prevDirection]=new_node;
   int opp= (prevDirection+2)%4;
   new_node->ptrs[opp]=current_Node_Ptr;
@@ -523,7 +558,6 @@ bool checkForRFID()
       mflag= (direction+2)%4;
       mask = mask | 1 << mflag;
       //MapNode(newUID,true,mask);
-      process_cmd("P");
       
 
       
@@ -535,6 +569,10 @@ bool checkForRFID()
 
 
 String detectIntersection() {
+  if(millis() < ignoreIntersectionUntil ){
+        return "I";
+    }
+  ignoreIntersectionUntil=millis()+2000;
   qtr.readCalibrated(sensorValues);
   int threshold =400; // General threshold adjustment
 
@@ -594,9 +632,9 @@ bool handleIntersectionIfNeeded() {
     String type = detectIntersection();
     if(type=="I"){return false;}
     Serial.print("Intersection detected.");
-    ignoreIntersectionUntil=millis()+2000;
     process_cmd(type);
-  return true;
+
+    return true;
 }
 
 void turnL(){direction++;direction=direction%4;
@@ -610,7 +648,26 @@ void turnR(){direction--;direction=direction%4;
 
 
 void process_cmd(String cmd){
-    
+    if(cmd=="S"){
+      if(current_Node_Ptr==nullptr){
+        Serial.println("We are at the start.");
+        int mask=0;
+        int mflag= (direction+2)%4;
+        mask = mask | 1 << mflag;
+        mask = mask | 1 << direction;
+        int newNodeIndex=addNodePtr("START_NODE", false, mask);
+        current_Node_Ptr=&graph[newNodeIndex];
+        tuple <String, Node*> tup=make_tuple(cmd,current_Node_Ptr);
+        cmd_stack.push_back(tup);
+        return;
+      } else {
+        Serial.println("Returned to the start; We are done with exploration mode.");
+        mode=1;
+        //do stuff
+        return;
+      }
+    }
+
     bool isRFID=false;
     if(cmd=="P"){
       isRFID=true;
@@ -661,7 +718,10 @@ void process_cmd(String cmd){
       Serial.println("Unknown intersection. Going straight...");
     }
       newNodeIndex=addNodePtr(UID, isRFID, mask);
-      link_via_direction(&graph[newNodeIndex], 1);
+      unsigned long now = millis();
+      unsigned long travelTime = now - segmentStartTime;
+      segmentStartTime = millis();
+      link_via_direction(&graph[newNodeIndex], travelTime);
       current_Node_Ptr=&graph[newNodeIndex];
       tuple <String, Node*> tup=make_tuple(cmd,current_Node_Ptr);
       cmd_stack.push_back(tup);
@@ -727,22 +787,25 @@ tuple<String, bool, bool> interpret_triple(tuple<String, String, String> triple)
   tie(Y, U, X) = triple; 
   if (tie(Y, U, X) == make_tuple("R", "U", "L")) { 
     return make_tuple("L", false, true); 
-  } else if (tie(Y, U, X) == make_tuple("R", "U", "T")) { 
+  } else if (tie(Y, U, X) == make_tuple("L", "U", "T")) {
+    return make_tuple("L", false, false);
+  }
+  else if (tie(Y, U, X) == make_tuple("R", "U", "T")) { 
     return make_tuple("R", false, false);
   } else if (tie(Y, U, X) == make_tuple("L", "U", "R")) {
     return make_tuple("R", false, true);
-  } else if (tie(Y, U, X) == make_tuple("L", "U", "L")) {
-    return make_tuple("", true, true);// returning empty string instead of None
-  } else if (tie(Y, U, X) == make_tuple("L", "U", "T")) {
-    return make_tuple("L", false, false);
-  } else if (tie(Y, U, X) == make_tuple("T", "U", "T")) {
-    return make_tuple("", true, true);
-  } else if (tie(Y, U, X) == make_tuple("T", "U", "R")) {
-    return make_tuple("", true, true);
-  } else if (tie(Y, U, X) == make_tuple("T", "U", "L")) {
+  } 
+  else if (tie(Y, U, X) == make_tuple("T", "U", "L")) {
     return make_tuple("forward", false, false);
   } else if (tie(Y, U, X) == make_tuple("P", "U", "P")) {
     return make_tuple("forward", false, true);
+  }
+  else if (tie(Y, U, X) == make_tuple("L", "U", "L")) {
+    return make_tuple("", true, true);//returning empty string instead of None
+  } else if (tie(Y, U, X) == make_tuple("T", "U", "T")) {
+    return make_tuple("", true, true);//we dont accept 4 ways
+  } else if (tie(Y, U, X) == make_tuple("T", "U", "R")) {
+    return make_tuple("", true, true);//we turn left by policy, so we wouldnt see this
   } else {
     return make_tuple("", true, true);
   }
