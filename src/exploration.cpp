@@ -671,6 +671,11 @@ void process_cmd(String cmd){
         return;
       } else {
         Serial.println("Returned to the start; We are done with exploration mode.");
+        unsigned long now = millis();
+        unsigned long travelTime = now - segmentStartTime;
+        segmentStartTime = millis();
+        link_via_direction(&graph[findNodeIndex("START_NODE")],1);
+        current_Node_Ptr=&graph[findNodeIndex("START_NODE")];
         mode=1;
         //do stuff
         return;
