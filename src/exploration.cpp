@@ -210,7 +210,7 @@ case 0:
   ExplorationPhase();
   break;
 case 1:
-  mapMaze();
+  //mapMaze();
   break;
 case 2:
   goToNode(targetpath);
