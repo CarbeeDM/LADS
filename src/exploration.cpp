@@ -666,8 +666,9 @@ void process_cmd(String cmd){
         mask = mask | 1 << direction;
         int newNodeIndex=addNodePtr("START_NODE", false, mask);
         current_Node_Ptr=&graph[newNodeIndex];
-        tuple <String, Node*> tup=make_tuple(cmd,current_Node_Ptr);
-        cmd_stack.push_back(tup);
+
+        //tuple <String, Node*> tup=make_tuple(cmd,current_Node_Ptr);
+        cmd_stack.push_back(make_tuple(cmd,current_Node_Ptr));
         return;
       } else {
         Serial.println("Returned to the start; We are done with exploration mode.");
@@ -737,15 +738,17 @@ void process_cmd(String cmd){
       segmentStartTime = millis();
       link_via_direction(&graph[newNodeIndex], travelTime);
       current_Node_Ptr=&graph[newNodeIndex];
-      tuple <String, Node*> tup=make_tuple(cmd,current_Node_Ptr);
-      cmd_stack.push_back(tup);
+      //make tie
+      //tuple <String, Node*> tup=make_tuple(cmd,current_Node_Ptr);
+        cmd_stack.push_back(make_tuple(cmd,current_Node_Ptr));
 
   } else {//backtrack
     if(cmd_stack.size()<2){
       newNodeIndex=addNodePtr(UID, isRFID, mask);
       current_Node_Ptr=&graph[newNodeIndex];
-      tuple <String, Node*> tup=make_tuple(cmd,current_Node_Ptr);
-      cmd_stack.push_back(tup);
+      //make tie
+      //tuple <String, Node*> tup=make_tuple(cmd,current_Node_Ptr);
+        cmd_stack.push_back(make_tuple(cmd,current_Node_Ptr));
       Serial.println("backtrace, not enough for a triple, pushed cmd");
       return;
     } else{
@@ -753,8 +756,9 @@ void process_cmd(String cmd){
     if(get<0>(u_tuple)!="U"){
       newNodeIndex=addNodePtr(UID, isRFID, mask);
       current_Node_Ptr=&graph[newNodeIndex];
-      tuple <String, Node*> tup=make_tuple(cmd,current_Node_Ptr);
-      cmd_stack.push_back(tup);
+      //make tie
+      //tuple <String, Node*> tup=make_tuple(cmd,current_Node_Ptr);
+        cmd_stack.push_back(make_tuple(cmd,current_Node_Ptr));
       Serial.println("backtrace, unexpected top, pushed cmd");
       return;
     }
