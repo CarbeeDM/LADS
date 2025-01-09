@@ -5,6 +5,7 @@
 #include <queue>
 #include <string>
 #include <iostream>
+#include <memory>
 
 
 using namespace std;
