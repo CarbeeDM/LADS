@@ -512,6 +512,7 @@ void process_cmd(string cmd, int cost){
         
         link_via_direction(graph[findNodeIndex("START_NODE")],cost);
         current_Node_Ptr=graph[findNodeIndex("START_NODE")];
+        printFinalGraphState();
         mode=1;
         //do stuff
         return;
@@ -614,6 +615,7 @@ cout<<"5";
       cout<< "backtrace decision:";
       cout<< decision<< endl;
       newNodeIndex=addNodePtr(UID, isRFID, mask);
+      link_via_direction(graph[newNodeIndex], cost);
       current_Node_Ptr=graph[newNodeIndex];
       merge_two_nodes(current_Node_Ptr, get<1>(y_tuple));
       //merge in backtrace(y_node,cmd)
@@ -809,7 +811,7 @@ void printFinalGraphState() {
 
         // Enqueue neighbors for BFS
         for (int i = 0; i < 4; i++) {
-            if (node->ptrs[i] && visited.find(node->ptrs[i]) == visited.end()) {
+            if (node->ptrs[i]!=nullptr && node->ptrs[i]!=wall && visited.find(node->ptrs[i]) == visited.end()) {
                 q.push(node->ptrs[i]);
             }
         }
