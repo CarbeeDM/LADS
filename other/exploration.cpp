@@ -85,10 +85,10 @@ int mode=0;
 
 bool backtrack=false;
 
-int currentNodeIndex = -1;          // Index of the current node in the graph
-int startNodeIndex = -1;            // Index of the start node in the graph
-int intersectionCounter = 0;        // Generate unique intersection IDs
-unsigned long segmentStartTime = 0; // measure travel time between nodes
+int currentNodeIndex = -1;              // Index of the current node in the graph
+int startNodeIndex = -1;                // Index of the start node in the graph
+int intersectionCounter = 0;            // Generate unique intersection IDs
+unsigned long segmentStartTime = 0;     // measure travel time between nodes
 unsigned long ignoreRFIDUntil = 0;      // ignore RFID reads until this time
 unsigned long ignoreIntersectionUntil = 0;
 String last_read_tagUID = "";
