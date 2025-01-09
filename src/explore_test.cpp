@@ -89,11 +89,12 @@ void wander(); //new
 void mapMaze(); //new
 void readyForOrder(); //new
 void goToNode(vector<shared_ptr<Node>> path); //new
+void printFinalGraphState();
 
 // --------------- SETUP -------------------------------
 
 // --------------- MAIN LOOP ---------------------------
-void main()
+int main()
 {
   mode=0;
   cout<<"starting..."<<endl;
@@ -103,7 +104,10 @@ void main()
     cout << "backtrace mode: "<< backtrack<<endl;
     cout << "Enter cmd(q to exit): ";
     cin >> cmd; // Waits for user input
-    if (cmd=="q"){ mode=-99; break;}
+    if (cmd=="q"){
+      printFinalGraphState(); 
+      mode=-99; 
+      break;}
 
     cout << "enter cost: ";
     cin >> cost;
@@ -124,6 +128,7 @@ void main()
     }
     cout<<"--------------------------------------"<<endl;
 }
+return 0;
 }
 // -----------------------------------------------------
 //                       MODES
@@ -764,4 +769,49 @@ vector<shared_ptr<Node>> pathToNode(string target_uid){
     }
   }
   vector<shared_ptr<Node>> nopath={}; return nopath;
+}
+
+void printFinalGraphState() {
+    unordered_set<shared_ptr<Node>> visited;
+    queue<shared_ptr<Node>> q;
+
+    if (graph.empty()) {
+        cout << "(Empty graph)\n";
+        return;
+    }
+
+    q.push(graph[0]); // Start from the first node in the graph
+
+    while (!q.empty()) {
+        shared_ptr<Node> node = q.front();
+        q.pop();
+
+        if (visited.find(node) != visited.end()) continue;
+        visited.insert(node);
+
+        if(node==nullptr || node==wall){
+          continue;
+        }
+      
+        cout << node->uid << ": { ";
+        
+        for (int i = 0; i < 4; i++) {
+            if (node->ptrs[i]!=nullptr && node->ptrs[i]!=wall) {
+                cout << (i == 0 ? "N: " : i == 1 ? "E: " : i == 2 ? "S: " : "W: ");
+                cout << "(" << node->ptrs[i]->uid << ", Cost: " << node->costs[i] << ")";
+            } else {
+                cout << (i == 0 ? "N: None" : i == 1 ? "E: None" : i == 2 ? "S: None" : "W: None");
+            }
+            if (i < 3) cout << ", ";
+        }
+
+        cout << " }\n";
+
+        // Enqueue neighbors for BFS
+        for (int i = 0; i < 4; i++) {
+            if (node->ptrs[i] && visited.find(node->ptrs[i]) == visited.end()) {
+                q.push(node->ptrs[i]);
+            }
+        }
+    }
 }

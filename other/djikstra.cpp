@@ -151,19 +151,16 @@ std::pair<std::vector<std::string>, int> dijkstra(const Graph &graph,
 
 int main() {
     std::string input_string = R"(
-S1: { N: (T1, Cost: 6), E: None, S: (R5, Cost: 1), W: None }
-R5: { N: (S1, Cost: 1), E: (R4, Cost: 10), S: None, W: None }
-R4: { N: (R3, Cost: 10), E: None, S: None, W: (R5, Cost: 10) }
-R3: { N: None, E: None, S: (R4, Cost: 10), W: (R2, Cost: 10) }
-R2: { N: None, E: (R3, Cost: 10), S: (T1, Cost: 1), W: None }
-T1: { N: (R2, Cost: 1), E: None, S: (S1, Cost: 6), W: (L2, Cost: 2) }
-L2: { N: (U1, Cost: 4), E: (T1, Cost: 2), S: None, W: None }
-U1: { N: None, E: None, S: (L2, Cost: 4), W: None }
+START_NODE: { N: (INT_4_T, Cost: 7), E: None, S: None, W: None }
+INT_4_T: { N: (INT_5_R, Cost: 2), E: (INT_3_L, Cost: 3), S: (START_NODE, Cost: 7), W: None }
+INT_5_R: { N: None, E: None, S: (INT_4_T, Cost: 2), W: None }
+INT_3_L: { N: (INT_2_U, Cost: 4), E: None, S: None, W: (INT_4_T, Cost: 3) }
+INT_2_U: { N: None, E: None, S: (INT_3_L, Cost: 4), W: None }
 )";
 
     Graph graph = parse_graph(input_string);
-    std::string start_node = "S1";
-    std::string end_node = "R4";
+    std::string start_node = "START_NODE";
+    std::string end_node = "INT_2_U";
     char initial_direction = 'N';
     std::vector<std::string> turns;
 
