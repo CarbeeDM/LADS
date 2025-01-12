@@ -509,7 +509,7 @@ void process_cmd(string cmd, int cost){
         return;
       } else {
         cout<< "Returned to the start; We are done with exploration mode." << endl;
-        
+        prevDirection=direction;
         link_via_direction(graph[findNodeIndex("START_NODE")],cost);
         current_Node_Ptr=graph[findNodeIndex("START_NODE")];
         printFinalGraphState();

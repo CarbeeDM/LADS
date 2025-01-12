@@ -172,29 +172,13 @@ def visualize_graph(description: str):
 
 if __name__ == "__main__":
     # The input string
-    graph_description = """START_NODE: { N: (INT_4_T, Cost: 7), E: None, S: (INT_33_R, Cost: 1), W: None }
-INT_4_T: { N: (INT_5_R, Cost: 2), E: (INT_3_L, Cost: 3), S: (START_NODE, Cost: 7), W: None }
-INT_33_R: { N: (START_NODE, Cost: 1), E: None, S: None, W: (INT_32_T, Cost: 1) }
-INT_5_R: { N: None, E: None, S: (INT_4_T, Cost: 2), W: (INT_8_T, Cost: 3) }
-INT_3_L: { N: (INT_2_U, Cost: 4), E: None, S: None, W: (INT_4_T, Cost: 3) }
-INT_32_T: { N: None, E: (INT_33_R, Cost: 1), S: (INT_31_R, Cost: 3), W: (INT_27_T, Cost: 4) }
-INT_8_T: { N: None, E: (INT_5_R, Cost: 3), S: (INT_7_U, Cost: 2), W: (INT_13_T, Cost: 4) }
-INT_2_U: { N: None, E: None, S: (INT_3_L, Cost: 4), W: None }
-INT_31_R: { N: (INT_32_T, Cost: 3), E: None, S: None, W: (INT_30_U, Cost: 4) }
-INT_27_T: { N: (INT_26_R, Cost: 2), E: (INT_32_T, Cost: 4), S: None, W: (INT_20_R, Cost: 5) }
-INT_7_U: { N: (INT_8_T, Cost: 2), E: None, S: None, W: None }
-INT_13_T: { N: (INT_12_L, Cost: 4), E: (INT_8_T, Cost: 4), S: None, W: (INT_14_R, Cost: 4) }
-INT_30_U: { N: None, E: (INT_31_R, Cost: 4), S: None, W: None }
-INT_26_R: { N: None, E: (INT_25_L, Cost: 3), S: (INT_27_T, Cost: 2), W: None }
-INT_20_R: { N: (INT_19_T, Cost: 2), E: (INT_27_T, Cost: 5), S: None, W: None }
-INT_12_L: { N: None, E: None, S: (INT_13_T, Cost: 4), W: (INT_11_U, Cost: 4) }
-INT_14_R: { N: None, E: (INT_13_T, Cost: 4), S: (INT_19_T, Cost: 6), W: None }
-INT_25_L: { N: (INT_24_U, Cost: 4), E: None, S: None, W: (INT_26_R, Cost: 3) }
-INT_19_T: { N: (INT_14_R, Cost: 6), E: (INT_18_L, Cost: 2), S: (INT_20_R, Cost: 2), W: None }
-INT_11_U: { N: None, E: (INT_12_L, Cost: 4), S: None, W: None }
-INT_24_U: { N: None, E: None, S: (INT_25_L, Cost: 4), W: None }
-INT_18_L: { N: (INT_17_U, Cost: 3), E: None, S: None, W: (INT_19_T, Cost: 2) }
-INT_17_U: { N: None, E: None, S: (INT_18_L, Cost: 3), W: None }"""
+    graph_description = """START_NODE: { N: (INT_0_R, Cost: 6), E: None, S: (INT_5_R, Cost: 1), W: None }
+INT_0_R: { N: None, E: None, S: (START_NODE, Cost: 6), W: (INT_1_R, Cost: 7) }
+INT_5_R: { N: (START_NODE, Cost: 1), E: None, S: None, W: (rfid_4_P, Cost: 4) }
+INT_1_R: { N: None, E: (INT_0_R, Cost: 7), S: (rfid_2_P, Cost: 4), W: None }
+rfid_4_P: { N: None, E: (INT_5_R, Cost: 4), S: None, W: (INT_3_R, Cost: 3) }
+rfid_2_P: { N: (INT_1_R, Cost: 4), E: None, S: (INT_3_R, Cost: 2), W: None }
+INT_3_R: { N: (rfid_2_P, Cost: 2), E: (rfid_4_P, Cost: 3), S: None, W: None }"""
 
     # Visualize it!
     visualize_graph(graph_description)
