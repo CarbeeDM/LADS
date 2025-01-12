@@ -9,40 +9,6 @@
 #include <unordered_set>
 #include <queue>
 
-/* 
-===============<[PURPOSE OF THIS CODE]>================
-This code will drive the robot along the line while printing the status of the sensors.
-It will produce 6 column list of inputs, for example:
-0 0 1 1 0 0
-0 0 1 1 0 0
-1 1 1 1 1 1
-1 1 1 1 1 1
-0 0 1 1 0 0
-0 0 1 1 1 0
-1 0 1 1 0 0
-0 0 1 1 0 0
-(this is hand written dummy data)
-it will tell us how wide the robot reads intersections as, and will let us decide on a memory size(how many previous sensor reads to store).
-this will be used for hopefully improving the intersection identification.
-=======================================================
-data acquired:
-001000
-001000
-001000
-001000
-001000
-----
-101000
-101100
-111111
-111111
-001111
-001000
------
-001000
-001000
-001000
-*/
 using namespace std;
 const vector<vector<int>> weights={ 
   {2,1  ,1,1  ,1,2}, 

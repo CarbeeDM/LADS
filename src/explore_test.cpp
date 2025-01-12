@@ -3,13 +3,61 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <queue>
-#include <string>
+#include <String>
 #include <iostream>
 #include <memory>
+
+#include <Arduino.h>
+#include <QTRSensors.h>
+#include <SPI.h>
+#include <WiFi.h>
+#include <Firebase_ESP_Client.h>
+#include <MFRC522.h>
 
 
 using namespace std;
 
+
+// ------------------- RFID PINS ----------------------
+#define SS_PIN  5   // ESP32 pin for MFRC522 SS/SDA
+#define RST_PIN 25  // ESP32 pin for MFRC522 RST
+MFRC522 rfid(SS_PIN, RST_PIN);  // Create MFRC522 instance
+
+// ------------------- QTR SENSOR SETUP ----------------
+QTRSensors qtr;
+const uint8_t SensorCount = 6;
+uint16_t sensorValues[SensorCount];
+
+
+// ------------------- PID PARAMETERS ------------------
+float Kp = 0.1;
+float Ki = 0.0;
+float Kd = 0.0;
+
+int lastError = 0;
+float integral = 0;
+
+// ------------------- MOTOR PINS ----------------------
+int motor1Pin1 = 15;
+int motor1Pin2 = 2;
+int enable1Pin = 17;
+
+int motor2Pin1 = 0;
+int motor2Pin2 = 4;
+int enable2Pin = 22;
+
+// ------------------- MOTOR PWM PROPERTIES ------------
+const int freq = 30000;
+const int pwmChannel1 = 0;
+const int pwmChannel2 = 1;
+const int resolution = 8;
+const int maxSpeed = 220;
+
+// ------------------- ULTRASONIC PINS -----------------
+const int trigPin = 26;
+const int echoPin = 21;
+
+#define SOUND_SPEED 0.034
 
 // ------------------- MAPPING STRUCTURES --------------
 //every left turn increments direction by 1, every right turn decrements it by 1. U turn does so by 2. then take mod4
@@ -18,17 +66,17 @@ int prevDirection=0;
 
 // Each Node can be an intersection or an RFID tag
 struct Node {
-  string uid;         // e.g. "RFID_XXYY" or "INT_1", "INT_2"
+  String uid;         // e.g. "RFID_XXYY" or "INT_1", "INT_2"
   bool isRFID;
   // adjacency: which other nodes connect to this node?
   vector<shared_ptr<Node>> ptrs={nullptr,nullptr,nullptr,nullptr};
-  std::vector<int> costs={0,0,0,0};  // travel time in ms
+  std::vector<unsigned long> costs={0,0,0,0};  // travel time in ms
   
 };
 
 //std::vector<Node> graph;            // Our global graph
 std::vector<shared_ptr<Node>> graph;
-vector<tuple<string,shared_ptr<Node>>> cmd_stack;
+vector<tuple<String,shared_ptr<Node>>> cmd_stack;
 shared_ptr<Node> current_Node_Ptr;
 
 std::shared_ptr<Node> wall = std::make_shared<Node>();
@@ -50,15 +98,17 @@ int intersectionCounter = 0;            // Generate unique intersection IDs
 unsigned long segmentStartTime = 0;     // measure travel time between nodes
 unsigned long ignoreRFIDUntil = 0;      // ignore RFID reads until this time
 unsigned long ignoreIntersectionUntil = 0;
-string last_read_tagUID = "";
-// ------------------- FUNCTION DECLARATIONS -----------
-int  findNodeIndex(const string& uid); //reused as is
+String last_read_tagUID = "";
 
-int  addNodePtr(const string uid, bool isRFID, int mask);//new
+String startNodeName="";
+// ------------------- FUNCTION DECLARATIONS -----------
+int  findNodeIndex(const String& uid); //reused as is
+
+int  addNodePtr(const String uid, bool isRFID, int mask);//new
 
 
 bool checkForRFID();//tweaked
-bool doesRFIDexist(string new_uid); //new
+bool doesRFIDexist(String new_uid); //new
 bool obstacleDetection();//reused as is
 bool handleIntersectionIfNeeded();//tweaked
 bool knownNode(shared_ptr<Node> n);
@@ -71,16 +121,16 @@ void turnL();//tweaked
 void turnR();//tweaked
 void merge_two_nodes(shared_ptr<Node> trueNode,shared_ptr<Node> oldNode);
 void link_via_direction(shared_ptr<Node> n, unsigned long cost);
-void process_cmd(string cmd, int cost);
+void process_cmd(String cmd);
 
-string detectIntersection(); //new
-string createIntersectionID(string type, bool rfid); //reused as is
+String detectIntersection(); //new
+String createIntersectionID(String type, bool rfid); //reused as is
 
 shared_ptr<Node> newTarget(); //new
 
-vector<shared_ptr<Node>> pathToNode(string target_uid); //new
+vector<shared_ptr<Node>> pathToNode(String target_uid); //new
 
-tuple<string, bool, bool> interpret_triple(tuple<string, string, string> triple);
+tuple<String, bool, bool> interpret_triple(tuple<String, String, String> triple);
 
 //----mode functions:
 void m1(); //technically new
@@ -88,7 +138,7 @@ void ExplorationPhase();
 void wander(); //new
 void mapMaze(); //new
 void readyForOrder(); //new
-void goToNode(vector<shared_ptr<Node>> path); //new
+void goToNode(); //new
 void printFinalGraphState();
 
 // --------------- SETUP -------------------------------
@@ -99,20 +149,9 @@ int main()
   mode=0;
   cout<<"starting..."<<endl;
   while(mode==0){
-    string cmd;
-    int cost;
-    cout << "backtrace mode: "<< backtrack<<endl;
-    cout << "Enter cmd(q to exit): ";
-    cin >> cmd; // Waits for user input
-    if (cmd=="q"){
-      printFinalGraphState(); 
-      mode=-99; 
-      break;}
+    ExplorationPhase();
 
-    cout << "enter cost: ";
-    cin >> cost;
-    process_cmd(cmd,cost);
-    cout<< "----------CURRENT MAP STATE---------"<<endl;
+    /* cout<< "----------CURRENT MAP STATE---------"<<endl;
     for(shared_ptr<Node> n : graph){
       cout<< n->uid<< ":  {";
       for (int i=0;i <n->ptrs.size();i++){
@@ -126,7 +165,7 @@ int main()
       }
       cout<<"}"<<endl;
     }
-    cout<<"--------------------------------------"<<endl;
+    cout<<"--------------------------------------"<<endl; */
 }
 return 0;
 }
@@ -136,13 +175,16 @@ return 0;
 void ExplorationPhase(){
   handleLineFollow();
 
-
+  if(millis() > ignoreIntersectionUntil ){
         handleIntersectionIfNeeded();
-    
-
+        printFinalGraphState();
+    }
+  if(millis()> ignoreRFIDUntil){
         if(checkForRFID()){
-          //process_cmd("P");
+          process_cmd("P");
+          printFinalGraphState();
         };
+    }
     
 }
 void m1(){
@@ -162,7 +204,7 @@ void m1(){
 void readyForOrder(){
   //open connnection and wait until you get given a task.
   if(false){
-  string targetInput;
+  String targetInput;
   targetpath=pathToNode(targetInput);
   mode=4;
   rstVars();
@@ -216,16 +258,15 @@ void mapMaze(){
   }
 }
 
-void goToNode(vector<shared_ptr<Node>> path){
+void goToNode(){
 
     handleLineFollow();
 
     if((detectIntersection()!="I") || checkForRFID()){
-      current_Node_Ptr=current_Node_Ptr->ptrs[direction];
-      if(current_Node_Ptr==*path.begin()){
-        path.erase(path.begin());
+      if(current_Node_Ptr==targetpath[0]){
+        targetpath.erase(targetpath.begin());
       }
-      if(path.empty()){
+      if(targetpath.empty()){
         
         rstVars();
         if(mode==2){
@@ -236,7 +277,7 @@ void goToNode(vector<shared_ptr<Node>> path){
         return;
       }
       for(int i=0; i< graph[currentNodeIndex]->ptrs.size();i++){
-      if(graph[currentNodeIndex]->ptrs[i]==*path.begin()){
+      if(graph[currentNodeIndex]->ptrs[i]==targetpath[0]){
         switch (direction-i)
         {
         case -1:
@@ -244,6 +285,7 @@ void goToNode(vector<shared_ptr<Node>> path){
           turnL();
           break;
         case 2:
+        case -2:
           turnL();
           turnL();
           break;
@@ -254,6 +296,7 @@ void goToNode(vector<shared_ptr<Node>> path){
         default:
           break;
         }
+        current_Node_Ptr=current_Node_Ptr->ptrs[direction];
         i+=graph[currentNodeIndex]->ptrs.size();//break from for loop
       }
     }
@@ -277,6 +320,7 @@ void wander(){
           turnL();
           break;
         case 2:
+        case -2:
           turnL();
           turnL();
           break;
@@ -322,7 +366,7 @@ bool knownNode(shared_ptr<Node> n){
 /**
  * @brief Find node index in global 'graph' by its UID
  */
-int findNodeIndex(const string& uid) {
+int findNodeIndex(const String& uid) {
   for (size_t i = 0; i < graph.size(); i++) {
     if (graph[i]->uid == uid) {
       return i;
@@ -334,7 +378,7 @@ int findNodeIndex(const string& uid) {
 // /**
 //  * @brief Add a new node to the graph
 //  */
-int addNodePtr(const string uid, bool isRFID, int mask){
+int addNodePtr(const String uid, bool isRFID, int mask){
 
   auto n = std::make_shared<Node>();
  
@@ -366,30 +410,41 @@ int addNodePtr(const string uid, bool isRFID, int mask){
  * @brief MUST be called before updating current_node_ptr.
  * take in the new node, create a connection between it and the current_node_ptr
  */
-void link_via_direction(shared_ptr<Node> new_node, int cost){
-cout<<"[link]";
+void link_via_direction(shared_ptr<Node> new_node, unsigned long cost){
+
   if(current_Node_Ptr==nullptr){
-    cout<<"[ERROR:link_via_direction]: nullpointer"<< endl;
+
     return;
   }
-cout<<current_Node_Ptr->uid<<"/"<<prevDirection<<"/"<<new_node->uid;
+
   current_Node_Ptr->ptrs[prevDirection]=new_node;
-cout<<"b";
+
   current_Node_Ptr->costs[prevDirection]=cost;
-cout<<"c";
+
   int opp= (prevDirection+2)%4;
 
   new_node->ptrs[opp]=current_Node_Ptr;
-cout<<"d";
+
   new_node->costs[opp]=cost;
-cout<<"[/link]";
+
 
 }
 
 bool obstacleDetection(){
+digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  // Sets the trigPin on HIGH state for 10 micro seconds
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
 
+  // Reads the echoPin, returns the sound wave travel time in microseconds
+  long duration = pulseIn(echoPin, HIGH);
+  
+  // Calculate the distance
+  float distanceCm = duration * SOUND_SPEED/2;
 
-return false;
+return distanceCm<10.0;
 }
 
 /**
@@ -398,7 +453,31 @@ return false;
 void driveMotors(int leftSpeed, int rightSpeed)
 {
 
+  if(obstacleDetection()){
+    ledcWrite(pwmChannel1, 0);
+    ledcWrite(pwmChannel2, 0);
+    return;
+  }
 
+  // Left motor
+  if (leftSpeed >= 0) {
+    digitalWrite(motor1Pin1, HIGH);
+    digitalWrite(motor1Pin2, LOW);
+  } else {
+    digitalWrite(motor1Pin1, LOW);
+    digitalWrite(motor1Pin2, HIGH);
+  }
+  ledcWrite(pwmChannel1, abs(leftSpeed));
+
+  // Right motor
+  if (rightSpeed >= 0) {
+    digitalWrite(motor2Pin1, HIGH);
+    digitalWrite(motor2Pin2, LOW);
+  } else {
+    digitalWrite(motor2Pin1, LOW);
+    digitalWrite(motor2Pin2, HIGH);
+  }
+  ledcWrite(pwmChannel2, abs(rightSpeed));
 }
 
 /**
@@ -407,6 +486,30 @@ void driveMotors(int leftSpeed, int rightSpeed)
 void handleLineFollow()
 {
   
+  uint16_t position = qtr.readLineBlack(sensorValues);
+  int error = position - 2500;  // for 6 sensors
+  float proportional = error;
+  integral += error;
+  float derivative = error - lastError;
+
+  float correction = (Kp * proportional) + (Ki * integral) + (Kd * derivative);
+  correction = constrain(correction, -maxSpeed, maxSpeed);
+
+  // We'll do a simple approach: a "base speed" approach, or direct approach.
+  int minSpeed = 170;
+  int leftMotorSpeed  = maxSpeed + correction;
+  int rightMotorSpeed = maxSpeed - correction;
+
+  leftMotorSpeed  = constrain(leftMotorSpeed, 0, maxSpeed);
+  rightMotorSpeed = constrain(rightMotorSpeed, 0, maxSpeed);
+
+  // scale them so they never go below minSpeed
+  float rangeFactor = (float)(maxSpeed - minSpeed) / (float)maxSpeed; 
+  leftMotorSpeed  = minSpeed + rangeFactor * leftMotorSpeed;
+  rightMotorSpeed = minSpeed + rangeFactor * rightMotorSpeed;
+
+  driveMotors(leftMotorSpeed, rightMotorSpeed);
+  lastError = error;
 }
 
 /**
@@ -414,6 +517,22 @@ void handleLineFollow()
  */
 bool checkForRFID()
 {
+  if (rfid.PICC_IsNewCardPresent() || ignoreRFIDUntil < millis()) {
+    ignoreRFIDUntil = millis() + 2000;
+    if (rfid.PICC_ReadCardSerial()) {
+      // Build the UID String
+      last_read_tagUID = "";
+      for (int i = 0; i < rfid.uid.size; i++) {
+        last_read_tagUID += String(rfid.uid.uidByte[i], HEX);
+      }
+      last_read_tagUID.toUpperCase();
+      rfid.PICC_HaltA();
+      rfid.PCD_StopCrypto1();
+
+      
+      return true;
+    }
+  }
   return false;
 }
 
@@ -422,7 +541,7 @@ bool checkForRFID()
  * Returns I if no intersection.
  * Updates ignoreIntersectionUntil
  */
-string detectIntersection() {
+String detectIntersection() {
 
   int threshold =400; // General threshold adjustment
 
@@ -447,20 +566,15 @@ string detectIntersection() {
 }
 
 /**
- * @brief Create an ID string, e.g. "INT_0_T", "INT_1_L"
+ * @brief Create an ID String, e.g. "INT_0_T", "INT_1_L"
  */
-string createIntersectionID(string type, bool rfid)
+String createIntersectionID(String type, bool rfid)
 { 
   if(rfid){
-  string id = "rfid_";
-  id += to_string(intersectionCounter++);
-  id += "_";
-  // append the type code
-  id += type;
-  return id;
+    return last_read_tagUID;
   }else{
-  string id = "INT_";
-  id += to_string(intersectionCounter++);
+  String id = "INT_";
+  id += String(intersectionCounter++);
   id += "_";
   // append the type code
   id += type; 
@@ -475,24 +589,43 @@ string createIntersectionID(string type, bool rfid)
 bool handleIntersectionIfNeeded() {
     
     // Determine intersection type
-    string type = detectIntersection();
+    String type = detectIntersection();
     if(type=="I"){return false;}
-    //process_cmd(type);
+    process_cmd(type);
 
     return true;
 }
 
 void turnL(){direction++;direction=(direction+4)%4;
-      
+      driveMotors(-220, 220);  // Pivot left
+      delay(500);
       }
 void turnR(){direction--;direction=(direction+4)%4;
-      
+      driveMotors(220, -220);  // Pivot left
+      delay(500);
       }
 
 /**
  * @brief Add a new node or do backtracking. S for startNode.
  */
-void process_cmd(string cmd, int cost){
+void process_cmd(String cmd){
+    if(current_Node_Ptr==nullptr){
+      if(cmd=="P")
+      {
+        cmd="S";
+        String UID = createIntersectionID(cmd, true);
+        startNodeName=UID;
+      } 
+      else 
+      { 
+        return;
+      }
+    }
+    else if(last_read_tagUID==startNodeName)
+    {
+        cmd="S";
+    }
+
     if(cmd=="S"){
       if(current_Node_Ptr==nullptr){
         cout<< "We are at the start." << endl;
@@ -500,19 +633,24 @@ void process_cmd(string cmd, int cost){
         int mflag= (direction+2)%4;
         mask = mask | 1 << mflag;
         mask = mask | 1 << direction;
-        int newNodeIndex=addNodePtr("START_NODE", false, mask);
+        int newNodeIndex=addNodePtr(startNodeName, false, mask);
 
         current_Node_Ptr=graph[newNodeIndex];
 
-        //tuple <string, shared_ptr<Node>> tup=make_tuple(cmd,current_Node_Ptr);
+        //tuple <String, shared_ptr<Node>> tup=make_tuple(cmd,current_Node_Ptr);
         cmd_stack.push_back(make_tuple(cmd,current_Node_Ptr));
         return;
       } else {
         cout<< "Returned to the start; We are done with exploration mode." << endl;
         prevDirection=direction;
-        link_via_direction(graph[findNodeIndex("START_NODE")],cost);
-        current_Node_Ptr=graph[findNodeIndex("START_NODE")];
+        unsigned long now = millis();
+        unsigned long travelTime = now - segmentStartTime;
+        segmentStartTime = millis();
+        link_via_direction(graph[findNodeIndex(startNodeName)],travelTime);
+        current_Node_Ptr=graph[findNodeIndex(startNodeName)];
         printFinalGraphState();
+        driveMotors(-220, -220);  // back up before the start node
+        delay(1000);
         mode=1;
         //do stuff
         return;
@@ -523,7 +661,7 @@ void process_cmd(string cmd, int cost){
     if(cmd=="P"){
       isRFID=true;
     }
-    string UID = createIntersectionID(cmd, isRFID);
+    String UID = createIntersectionID(cmd, isRFID);
     prevDirection=direction;
     int newNodeIndex=-1;
     int mask=0;
@@ -568,42 +706,43 @@ void process_cmd(string cmd, int cost){
       // Unknown or straight
       cout<< "Unknown intersection. Going straight..." << endl;
     }
-cout<<"1";
+
       newNodeIndex=addNodePtr(UID, isRFID, mask);
-cout<<"2";
-      link_via_direction(graph[newNodeIndex], cost);
-cout<<"3";
+      unsigned long now = millis();
+      unsigned long travelTime = now - segmentStartTime;
+      segmentStartTime = millis();
+      link_via_direction(graph[newNodeIndex], travelTime);
+
       current_Node_Ptr=graph[newNodeIndex];
-cout<<"4";
+
       //make tie
-      //tuple <string, shared_ptr<Node>> tup=make_tuple(cmd,current_Node_Ptr);
+      //tuple <String, shared_ptr<Node>> tup=make_tuple(cmd,current_Node_Ptr);
       cmd_stack.push_back(make_tuple(cmd,current_Node_Ptr));
-cout<<"5";
 
   } else {//backtrack
     if(cmd_stack.size()<2){
       newNodeIndex=addNodePtr(UID, isRFID, mask);
       current_Node_Ptr=graph[newNodeIndex];
       //make tie
-      //tuple <string, shared_ptr<Node>> tup=make_tuple(cmd,current_Node_Ptr);
+      //tuple <String, shared_ptr<Node>> tup=make_tuple(cmd,current_Node_Ptr);
         cmd_stack.push_back(make_tuple(cmd,current_Node_Ptr));
       cout<< "backtrace, not enough for a triple, pushed cmd" << endl;
       return;
     } else{
-    tuple <string, shared_ptr<Node>> u_tuple=cmd_stack[cmd_stack.size()-1];
+    tuple <String, shared_ptr<Node>> u_tuple=cmd_stack[cmd_stack.size()-1];
     if(get<0>(u_tuple)!="U"){
       newNodeIndex=addNodePtr(UID, isRFID, mask);
       current_Node_Ptr=graph[newNodeIndex];
       //make tie
-      //tuple <string, shared_ptr<Node>> tup=make_tuple(cmd,current_Node_Ptr);
+      //tuple <String, shared_ptr<Node>> tup=make_tuple(cmd,current_Node_Ptr);
         cmd_stack.push_back(make_tuple(cmd,current_Node_Ptr));
       cout<< "backtrace, unexpected top, pushed cmd" << endl;
       return;
     }
 
-    tuple <string, shared_ptr<Node>> y_tuple=cmd_stack[cmd_stack.size()-2];
-    //tuple <string,bool,bool> triple_decision; //decision, error, remain_backtrace
-    string decision;
+    tuple <String, shared_ptr<Node>> y_tuple=cmd_stack[cmd_stack.size()-2];
+    //tuple <String,bool,bool> triple_decision; //decision, error, remain_backtrace
+    String decision;
     bool error;
     bool remain_backtrace;
     tie(decision,error,remain_backtrace)=interpret_triple(tie(get<0>(y_tuple),"U",cmd));
@@ -615,7 +754,10 @@ cout<<"5";
       cout<< "backtrace decision:";
       cout<< decision<< endl;
       newNodeIndex=addNodePtr(UID, isRFID, mask);
-      link_via_direction(graph[newNodeIndex], cost);
+      unsigned long now = millis();
+      unsigned long travelTime = now - segmentStartTime;
+      segmentStartTime = millis();
+      link_via_direction(graph[newNodeIndex], travelTime);
       current_Node_Ptr=graph[newNodeIndex];
       merge_two_nodes(current_Node_Ptr, get<1>(y_tuple));
       //merge in backtrace(y_node,cmd)
@@ -645,8 +787,8 @@ cout<<"5";
 /**
  * @brief During backtracing, handle triplets.
  */
-tuple<string, bool, bool> interpret_triple(tuple<string, string, string> triple) {
-  string Y, U, X;
+tuple<String, bool, bool> interpret_triple(tuple<String, String, String> triple) {
+  String Y, U, X;
   tie(Y, U, X) = triple; 
   if (tie(Y, U, X) == make_tuple("R", "U", "L")) { 
     return make_tuple("L", false, true); 
@@ -664,7 +806,7 @@ tuple<string, bool, bool> interpret_triple(tuple<string, string, string> triple)
     return make_tuple("forward", false, true);
   }
   else if (tie(Y, U, X) == make_tuple("L", "U", "L")) {
-    return make_tuple("", true, true);//returning empty string instead of None
+    return make_tuple("", true, true);//returning empty String instead of None
   } else if (tie(Y, U, X) == make_tuple("T", "U", "T")) {
     return make_tuple("", true, true);//we dont accept 4 ways
   } else if (tie(Y, U, X) == make_tuple("T", "U", "R")) {
@@ -700,7 +842,7 @@ void merge_two_nodes(shared_ptr<Node> trueNode,shared_ptr<Node> oldNode){
 /**
  * @brief check if a given rfid exists in the graph
  */
-bool doesRFIDexist(string new_uid){
+bool doesRFIDexist(String new_uid){
   for(shared_ptr<Node> i : graph){
     if(i->uid==new_uid){
       return true;
@@ -737,7 +879,7 @@ shared_ptr<Node> newTarget(){
  * @brief returns a ptr list of nodes that lead to a target_uid.
  * [current_node*, ptr1, ptr2, ptr3, target_uid*]
  */
-vector<shared_ptr<Node>> pathToNode(string target_uid){
+vector<shared_ptr<Node>> pathToNode(String target_uid){
   queue<shared_ptr<Node>> toVisit;
   unordered_map<shared_ptr<Node>, shared_ptr<Node>> parentMap; 
   // To store the parent of each node 
