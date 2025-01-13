@@ -129,6 +129,7 @@ String createIntersectionID(String type, bool rfid); //reused as is
 shared_ptr<Node> newTarget(); //new
 
 vector<shared_ptr<Node>> pathToNode(String target_uid); //new
+vector<shared_ptr<Node>> djikstra(String startName, String endName);
 
 tuple<String, bool, bool> interpret_triple(tuple<String, String, String> triple);
 
@@ -875,6 +876,71 @@ shared_ptr<Node> newTarget(){
   return wall;
 }
 
+
+
+vector<shared_ptr<Node>> djikstra(String startName, String endName){
+  vector<shared_ptr<Node>> unvisited;
+  unordered_map<shared_ptr<Node>, shared_ptr<Node>> parentMap; 
+  unordered_map<shared_ptr<Node>, int> distances;
+
+  if(findNodeIndex(startName)==-1){ cerr<<"cant find start node"<<endl;return unvisited;}
+if(findNodeIndex(endName)==-1){ cerr<<"cant find end node"<<endl;return unvisited;}
+
+  auto get_smallest_distance_node = [&](const vector<shared_ptr<Node>> nodes){
+    shared_ptr<Node> best_node;
+    int min_dist =numeric_limits<int>::max();
+    for(int i=0;i<nodes.size();i++){
+      if(distances[nodes[i]]<min_dist){
+        min_dist = distances[nodes[i]];
+        best_node = nodes[i];
+      }
+    }
+    return best_node;
+  }; 
+
+  for (int i=0; i<graph.size();i++){
+    distances[graph[i]]=numeric_limits<int>::max();
+    unvisited.push_back(graph[i]);
+  }
+  distances[graph[findNodeIndex(startName)]]=0;
+
+  while(!unvisited.empty()){
+    shared_ptr<Node> current_node = get_smallest_distance_node(unvisited);
+
+    if(distances[current_node] == numeric_limits<int>::max()) break;
+
+    unvisited.erase(std::remove(unvisited.begin(), unvisited.end(), current_node), unvisited.end());
+
+    for (int i=0;i<current_node->ptrs.size();i++){
+      shared_ptr<Node> neighbor=current_node->ptrs[i];
+      int cost= current_node->costs[i];
+
+      if(neighbor==nullptr || neighbor==wall) continue;
+
+      int alt = distances[current_node] + cost;
+      if(alt < distances[neighbor]){
+        distances[neighbor]=alt;
+        parentMap[neighbor]=current_node;
+      }
+    }
+    if(current_node->uid==endName) break;
+  }
+
+vector<shared_ptr<Node>> path;
+if (distances[graph[findNodeIndex(endName)]] == std::numeric_limits<int>::max()) {
+  cerr<<"end node distance still has intmax value"<<endl;
+  return path;
+  }
+shared_ptr<Node> target_node=graph[findNodeIndex(endName)];
+for (shared_ptr<Node> node = target_node;node!=nullptr;node=parentMap[node]){
+        path.push_back(node);
+      }
+
+
+reverse(path.begin(), path.end());
+cout<<"successful djikstra run"<<endl;
+return path;
+}
 /**
  * @brief returns a ptr list of nodes that lead to a target_uid.
  * [current_node*, ptr1, ptr2, ptr3, target_uid*]
