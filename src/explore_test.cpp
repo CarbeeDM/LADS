@@ -17,7 +17,22 @@
 
 using namespace std;
 
+//-------------------- FIREBASE -----------------------
+#define WIFI_SSID "cece"
+#define WIFI_PASSWORD "123123aa"
+#define API_KEY "AIzaSyD3BE-hRNRFyzfK1d98scXM5zG5w5iX3fw"
+#define DATABASE_URL "https://ladsceng483-default-rtdb.europe-west1.firebasedatabase.app/"
 
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
+// Path to the field you want to monitor
+String activeTaskPath ="/active_task";
+String deliveryLocation = "/active_task/delivery_location";
+String pickupLocation = "/active_task/pick_up_location";
+
+unsigned long sendDataPrevMillis=0;
+bool signupOK = false;
 // ------------------- RFID PINS ----------------------
 #define SS_PIN  5   // ESP32 pin for MFRC522 SS/SDA
 #define RST_PIN 25  // ESP32 pin for MFRC522 RST
@@ -83,12 +98,14 @@ std::shared_ptr<Node> wall = std::make_shared<Node>();
 
 vector<shared_ptr<Node>> targetpath;
 
-//0= wandering around until it comes across an RFID tag.
-//1= mapping the maze
-//2= going to a target node(for maze purposes)
-//3= awaiting orders
-//4= going to a target node(for delivery purposes)
-int mode=0;  
+vector<String> orders;
+
+/*0: Waiting on Start
+	1: Exploration
+	2: Going to a node
+	3: Waiting for proceeding (app notified)
+	4: Going back to start node */
+int mode=1;  
 
 bool backtrack=false;
 
@@ -102,77 +119,238 @@ String last_read_tagUID = "";
 
 String startNodeName="";
 // ------------------- FUNCTION DECLARATIONS -----------
-int  findNodeIndex(const String& uid); //reused as is
+int  findNodeIndex(const String& uid); 
 
-int  addNodePtr(const String uid, bool isRFID, int mask);//new
+int  addNodePtr(const String uid, bool isRFID, int mask);
 
 
-bool checkForRFID();//tweaked
-bool doesRFIDexist(String new_uid); //new
-bool obstacleDetection();//reused as is
-bool handleIntersectionIfNeeded();//tweaked
+bool checkForRFID();
+bool doesRFIDexist(String new_uid); 
+bool obstacleDetection();
+bool handleIntersectionIfNeeded();
 bool knownNode(shared_ptr<Node> n);
 
-void driveMotors(int leftSpeed, int rightSpeed); //reused as is
-void handleLineFollow(); //reused as is
+void driveMotors(int leftSpeed, int rightSpeed); 
+void handleLineFollow(); 
 
 void rstVars();
-void turnL();//tweaked
-void turnR();//tweaked
+void turnL();
+void turnR();
 void merge_two_nodes(shared_ptr<Node> trueNode,shared_ptr<Node> oldNode);
 void link_via_direction(shared_ptr<Node> n, unsigned long cost);
 void process_cmd(String cmd);
+void printFinalGraphState();
 
-String detectIntersection(); //new
-String createIntersectionID(String type, bool rfid); //reused as is
+void streamCallback_order(FirebaseStream data);
+void streamCallback_wait(FirebaseStream data);
+void streamTimeoutCallback(bool timeout);
 
-shared_ptr<Node> newTarget(); //new
+String detectIntersection();
+String createIntersectionID(String type, bool rfid); 
 
-vector<shared_ptr<Node>> pathToNode(String target_uid); //new
+
+vector<shared_ptr<Node>> pathToNode(String target_uid);
 vector<shared_ptr<Node>> djikstra(String startName, String endName);
 
 tuple<String, bool, bool> interpret_triple(tuple<String, String, String> triple);
 
 //----mode functions:
-void m1(); //technically new
+
 void ExplorationPhase();
-void wander(); //new
-void mapMaze(); //new
-void readyForOrder(); //new
-void goToNode(); //new
-void printFinalGraphState();
+void readyForOrder(); 
+void goToNode();
+void waitForPickUp();
 
 // --------------- SETUP -------------------------------
-
-// --------------- MAIN LOOP ---------------------------
-int main()
+void setup()
 {
-  mode=0;
-  cout<<"starting..."<<endl;
-  while(mode==0){
-    ExplorationPhase();
+  Serial.begin(9600);
+  Serial.println("Initializing...");
 
-    /* cout<< "----------CURRENT MAP STATE---------"<<endl;
-    for(shared_ptr<Node> n : graph){
-      cout<< n->uid<< ":  {";
-      for (int i=0;i <n->ptrs.size();i++){
-        cout <<"    ";
-        if (n->ptrs[i]!=nullptr && n->ptrs[i]!=wall){
-          cout << i <<": "<< n->ptrs[i]->uid;
-          cout << "/" <<n->costs[i]<<"||";
-        } else{
-          cout << i << ": NULL ||";
-        }
-      }
-      cout<<"}"<<endl;
+  // ----- WIFI CONNECT -----
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("connecting to wifi");
+  while(WiFi.status() != WL_CONNECTED){
+      Serial.print(".");delay(300);
+  }
+  Serial.println();
+  Serial.print("connected IP: ");
+  Serial.println(WiFi.localIP());
+  Serial.println();
+
+  // ----- FIREBASE SET UP -----
+  config.api_key=API_KEY;
+  config.database_url=DATABASE_URL;
+  if(Firebase.signUp(&config,&auth,"","")){
+      Serial.println("signup OK");
+      signupOK=true;
+  } else {
+      Serial.printf("%s\n", config.signer.signupError.message.c_str());
+  }
+
+  //config.token_status_callback = tokenStatusCallback;
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
+
+  if (Firebase.RTDB.beginStream(&fbdo, activeTaskPath)) {
+    Serial.println("Firebase stream started successfully.");
+    Firebase.RTDB.setStreamCallback(&fbdo, streamCallback_order, streamTimeoutCallback);
+  } else {
+    Serial.printf("Could not start stream, %s\n", fbdo.errorReason().c_str());
+  }
+  if (Firebase.RTDB.beginStream(&fbdo, "/Robot/waiting")) {
+    Serial.println("Firebase stream started successfully.");
+    Firebase.RTDB.setStreamCallback(&fbdo, streamCallback_wait, streamTimeoutCallback);
+  } else {
+    Serial.printf("Could not start stream, %s\n", fbdo.errorReason().c_str());
+  }
+
+  // ----- MOTOR SETUP -----
+  pinMode(motor1Pin1, OUTPUT);
+  pinMode(motor1Pin2, OUTPUT);
+  pinMode(motor2Pin1, OUTPUT);
+  pinMode(motor2Pin2, OUTPUT);
+
+  ledcAttachPin(enable1Pin, pwmChannel1);
+  ledcSetup(pwmChannel1, freq, resolution);
+
+  ledcAttachPin(enable2Pin, pwmChannel2);
+  ledcSetup(pwmChannel2, freq, resolution);
+
+  // ----- QTR SENSOR SETUP -----
+  qtr.setTypeAnalog();
+  qtr.setSensorPins((const uint8_t[]){36,39,34,35,32,33}, SensorCount);
+  qtr.setEmitterPin(2);
+
+  // ----- CALIBRATION -----
+  Serial.println("Calibrating sensors. Move the robot over the line...");
+  for (uint16_t i = 0; i < 200; i++)
+  {
+    qtr.calibrate();
+    if (i % 50 == 0) {
+      Serial.print("Calibration progress: ");
+      Serial.print((i / 200.0) * 100);
+      Serial.println("%");
     }
-    cout<<"--------------------------------------"<<endl; */
+  }
+  Serial.println("Calibration complete!");
+
+  // (Optional) Print calibration values
+  Serial.println("Calibration minimum values:");
+  for (uint8_t i = 0; i < SensorCount; i++) {
+    Serial.print(qtr.calibrationOn.minimum[i]);
+    Serial.print(' ');
+  }
+  Serial.println();
+
+  Serial.println("Calibration maximum values:");
+  for (uint8_t i = 0; i < SensorCount; i++) {
+    Serial.print(qtr.calibrationOn.maximum[i]);
+    Serial.print(' ');
+  }
+  Serial.println();
+
+  // ----- ULTRASONIC SETUP -----
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  Serial.println("Ultrasonic ready...");
+
+  // ----- RFID READER SETUP -----
+  SPI.begin();
+  rfid.PCD_Init();
+  Serial.println("Tap an RFID/NFC tag on the RFID-RC522 reader");
+
+  delay(1000);
+
+  segmentStartTime = millis(); // start measuring travel time from the initial node
+  ignoreIntersectionUntil=millis();
+  mode_set(1);
+  cout<<"starting..."<<endl;
 }
-return 0;
+// --------------- MAIN LOOP ---------------------------
+void loop()
+{
+  switch(mode)
+  {
+    case 0:
+      readyForOrder();
+    break;
+
+    case 1:
+      ExplorationPhase();
+    break;
+
+    case 2:
+      goToNode();//go to deliver(targetpath given either by readyForOrder or streamCallback_wait)
+    break;
+
+    case 3:
+      waitForPickUp();
+    break;
+
+    case 4:
+      goToNode();//go back to start(targetpath given by streamCallback_wait)
+  }
+  
 }
+
+
 // -----------------------------------------------------
 //                       MODES
 // -----------------------------------------------------
+
+void reset_robot(){
+    backtrack=false;
+
+    currentNodeIndex = -1;              // Index of the current node in the graph
+    startNodeIndex = -1;                // Index of the start node in the graph
+    intersectionCounter = 0;            // Generate unique intersection IDs
+    segmentStartTime = millis();     // measure travel time between nodes
+    ignoreRFIDUntil = millis();      // ignore RFID reads until this time
+    ignoreIntersectionUntil = millis();
+    last_read_tagUID = "";
+
+    startNodeName="";
+    for (auto& node : graph) {
+      node->ptrs.clear(); 
+    }
+    graph.clear();
+    current_Node_Ptr=nullptr;
+
+    cmd_stack.clear();
+    int direction=0; //0(up) 1(left) 2(down) 3(right)
+    int prevDirection=0;
+    targetpath.clear();
+    orders.clear();
+
+}
+void mode_set(int a){
+  FirebaseJson json;
+
+  if(a==3){
+  json.set("waiting", true);
+  if (Firebase.RTDB.set(&fbdo, "/robot/waiting", json)) {
+    Serial.println("Waiting updated in Firebase.");
+  } else {
+    Serial.printf("Failed to update waiting: %s\n", fbdo.errorReason().c_str());
+  }
+  }else if(a==1){
+    reset_robot();
+  }
+
+  mode=a;
+  //update firebase
+  
+  json.set("current_mode", mode);  // Set the 'current_mode' field to the new mode value
+  
+  // Write the updated mode to the Firebase Realtime Database under the 'robot' node
+  if (Firebase.RTDB.set(&fbdo, "/robot/current_mode", json)) {
+    Serial.println("Mode updated in Firebase.");
+  } else {
+    Serial.printf("Failed to update mode: %s\n", fbdo.errorReason().c_str());
+  }
+
+}
 void ExplorationPhase(){
   handleLineFollow();
 
@@ -188,155 +366,115 @@ void ExplorationPhase(){
     }
     
 }
-void m1(){
 
-        checkForRFID();
-    
-
-  // 2. Check for intersection (T, L, +, etc.)
-
-        handleIntersectionIfNeeded();
-    
-
-  // 3. Perform line following to stay on track
-  handleLineFollow();
+void waitForPickUp(){
+  //do nothing. streamCallback_wait() will change mode.
+  //if necessery, add timer here.
 }
 
 void readyForOrder(){
-  //open connnection and wait until you get given a task.
-  if(false){
-  String targetInput;
-  targetpath=pathToNode(targetInput);
-  mode=4;
-  rstVars();
+  //checks if the orders array has been given value by streamCallback_order()
+  if(orders.size()>0){
+  String endName=orders[0];
+
+  targetpath=djikstra(current_Node_Ptr->uid,endName);
+
+  mode_set(2);
+  orders.erase(orders.begin());
   return;
   } else {
-    
-  }
-}
-
-void mapMaze(){
-  handleLineFollow();
-  shared_ptr<Node> target;
-  if((detectIntersection()!="I") || checkForRFID()){
-  current_Node_Ptr=current_Node_Ptr->ptrs[direction];
-  if(knownNode(current_Node_Ptr)){
-    target=newTarget();
-    rstVars();
-    if(target==wall){
-      mode=3;
-      return;
-    }
-    targetpath=pathToNode(target->uid);
-    mode=2;
     return;
-  } else {
-    for(int i=0; i< graph[currentNodeIndex]->ptrs.size();i++){
-      if(graph[currentNodeIndex]->ptrs[i]==nullptr){
-        switch (direction-i)
-        {
-        case -1:
-        case 3:
-          turnL();
-          break;
-        case -2:
-        case 2:
-          turnL();
-          turnL();
-          break;
-        case 1: 
-        case -3:
-          turnR();
-          break;
-        default:
-          break;
-        }
-        i+=graph[currentNodeIndex]->ptrs.size();//break from for loop
-      }
-    }
-
-  }
   }
 }
 
 void goToNode(){
 
     handleLineFollow();
-
-    if((detectIntersection()!="I") || checkForRFID()){
-      if(current_Node_Ptr==targetpath[0]){
-        targetpath.erase(targetpath.begin());
-      }
-      if(targetpath.empty()){
-        
-        rstVars();
-        if(mode==2){
-          mode=1;
-        } else {
-          mode=3;
+      if(checkForRFID() && detectIntersection()!="I"){
+        cout<<"I was at: "<< current_Node_Ptr->uid<<endl;
+        cout<<"is it "<< targetpath[0]->uid <<endl;
+        if(current_Node_Ptr==targetpath[0]){
+          cout<<"correct, deleted path begin."<<endl;
+          targetpath.erase(targetpath.begin());
+        }else{
+          cerr<<"[ERROR] at an unexpected location"<<endl;
+          cerr<<"mismatched target path and graph"<<endl;
+          cerr<<"==============="<<endl;
+          cerr<<"current node: " << current_Node_Ptr->uid<<endl;
+          cerr<<"current node as per targetpath: "<< targetpath[0]->uid<<endl;
+          cerr<<"================="<<endl;
+          cerr<<"[BREAKING LOOP]"<<endl; 
+          mode=-99;
+          return;}
+        if(targetpath.empty()){
+          cout<<"end of the path is here"<<endl;
+          cout<<"[BREAKING LOOP]"<<endl; 
+          rstVars();
+          if(mode==2){// was going for task
+            mode_set(3);
+          } else {// was going back to start node
+            mode_set(0);
+          }
+          return;
         }
+        for(int i=0; i< current_Node_Ptr->ptrs.size();i++){
+          if(current_Node_Ptr->ptrs[i]==targetpath[0]){
+            //int decision=direction-i;
+            cout<<"switch-case: " << (direction-i)<<endl;
+            switch (direction-i)
+            {
+              case -1:
+              case 3:
+                cout<<"turned Left"<<endl;
+                turnL();
+              break;
+              case 2:
+              case -2:
+                cout<<"turned backwards"<<endl;
+                turnL();
+                turnL();
+              break;
+              case 1: 
+              case -3:
+                cout<<"turned right"<<endl;
+                turnR();
+              break;
+              default:
+                cout<<"went straight"<<endl;
+              break;
+            }
+
+            current_Node_Ptr=current_Node_Ptr->ptrs[direction];
+            cout<<"I am now at: "<< current_Node_Ptr->uid<<endl;
+            i+=graph[currentNodeIndex]->ptrs.size();//break from for loop
+            
+            return;
+          }
+        }
+
+        cerr<<"[ERROR] next node on target path is not current node's neighbor."<<endl;
+        cerr<<"==============="<<endl;
+        cerr<<"current node: " << current_Node_Ptr->uid<<endl;
+        cerr<<"neighbors:"<<endl;
+
+        for (int i = 0; i < 4; i++) {
+          cerr<<"   ";
+          if (current_Node_Ptr->ptrs[i]!=nullptr && current_Node_Ptr->ptrs[i]!=wall) {
+            cerr << (i == 0 ? "0-N: " : i == 1 ? "1-E: " : i == 2 ? "2-S: " : "3-W: ");
+            cerr << current_Node_Ptr->ptrs[i]->uid <<endl;
+          } else {
+            cerr << (i == 0 ? "0-N: None" : i == 1 ? "1-E: None" : i == 2 ? "2-S: None" : "3-W: None")<<endl;
+          }
+        }
+
+        cerr<<"----------------"<<endl;
+        cerr<<"next node as per targetpath: "<< targetpath[0]->uid<<endl;
+        cerr<<"================="<<endl;
+        cerr<<"[BREAKING LOOP]"<<endl; 
+        mode=-99;
         return;
-      }
-      for(int i=0; i< graph[currentNodeIndex]->ptrs.size();i++){
-      if(graph[currentNodeIndex]->ptrs[i]==targetpath[0]){
-        switch (direction-i)
-        {
-        case -1:
-        case 3:
-          turnL();
-          break;
-        case 2:
-        case -2:
-          turnL();
-          turnL();
-          break;
-        case 1: 
-        case -3:
-          turnR();
-          break;
-        default:
-          break;
-        }
-        current_Node_Ptr=current_Node_Ptr->ptrs[direction];
-        i+=graph[currentNodeIndex]->ptrs.size();//break from for loop
-      }
     }
-    }
-}
-
-void wander(){
-  handleLineFollow();
-  if(handleIntersectionIfNeeded() || checkForRFID()){
-    if(currentNodeIndex>-1){
-      mode=1;
-      rstVars();
-      return;
-    }
-    for(int i=0; i< graph[currentNodeIndex]->ptrs.size();i++){
-      if(graph[currentNodeIndex]->ptrs[i]!=wall){
-        switch (direction-i)
-        {
-        case -1:
-        case 3:
-          turnL();
-          break;
-        case 2:
-        case -2:
-          turnL();
-          turnL();
-          break;
-        case 1: 
-        case -3:
-          turnR();
-          break;
-        default:
-          break;
-        }
-        i+=graph[currentNodeIndex]->ptrs.size();
-      }
-    }
-  }
-}
+} 
 
 
 
@@ -344,6 +482,71 @@ void wander(){
 //                 HELPER FUNCTIONS
 // -----------------------------------------------------
 
+void streamCallback_order(FirebaseStream data) {
+  Serial.println("Data changed!");
+
+  // Check if the data is JSON
+  if (data.dataTypeEnum() == fb_esp_rtdb_data_type_json) {
+    FirebaseJson jsonData = data.jsonObject(); // Parse JSON object
+    
+    FirebaseJsonData result; // Create a FirebaseJsonData object to store the result
+
+if (jsonData.get(result, "pick_up_location") && result.typeNum == FirebaseJson::JSON_STRING) {
+      String pickUpLocation = result.stringValue; // Get the pick-up location value as a string
+      orders.push_back(pickUpLocation.c_str());
+    }
+
+    if (jsonData.get(result, "delivery_location") && result.typeNum == FirebaseJson::JSON_STRING) {
+      String deliveryLocation = result.stringValue; // Get the delivery location value as a string
+      orders.push_back(deliveryLocation.c_str());
+    }
+
+    //orders.clear();
+    // Print the updated orders vector
+    Serial.println("Updated Orders:");
+    for (const auto& order : orders) {
+      Serial.println(order.c_str());
+    }
+
+  } else {
+    Serial.println("Unexpected data type received.");
+  }
+}
+
+
+void streamCallback_wait(FirebaseStream data) {
+   Serial.println("Stream callback triggered for 'waiting'!");
+
+  // Check if the data type is boolean
+  if (data.dataTypeEnum() == fb_esp_rtdb_data_type_boolean) {
+    bool waitingValue = data.boolData(); // Extract the boolean value
+
+    if (!waitingValue) { // Check if 'waiting' has become false
+      
+      if(mode==3){
+        if(orders.size()>0){
+          targetpath=djikstra(current_Node_Ptr->uid,orders[0]);
+          orders.erase(orders.begin());
+          mode_set(1);
+        } else{
+          targetpath=djikstra(current_Node_Ptr->uid, startNodeName);
+          mode_set(4);
+        }
+        
+      }else{return;}
+    }
+  } else {
+    Serial.println("Unexpected data type received for 'waiting'.");
+  }
+}
+
+void streamTimeoutCallback(bool timeout) {
+  if (timeout) {
+    Serial.println("Stream timeout, reconnecting...");
+  } else {
+    Serial.println("Stream error.");
+  }
+}
 /**
  * @brief set ignore vars to 0
  */
@@ -652,7 +855,7 @@ void process_cmd(String cmd){
         printFinalGraphState();
         driveMotors(-220, -220);  // back up before the start node
         delay(1000);
-        mode=1;
+        mode_set(0);
         //do stuff
         return;
       }
@@ -856,25 +1059,7 @@ bool doesRFIDexist(String new_uid){
  * @brief find a nodePtr that doesnt have all its neighbors mapped.
  * returns &wall if all nodes have been mapped.
  */
-shared_ptr<Node> newTarget(){
-  queue<shared_ptr<Node>> toVisit;
-  toVisit.push(current_Node_Ptr);
-  unordered_set<shared_ptr<Node>> visited;
-  visited.insert(current_Node_Ptr);
-  while(!toVisit.empty()){
-    shared_ptr<Node> curr_node=toVisit.front();
-    toVisit.pop();
-    for(int i=0; i<curr_node->ptrs.size();i++){
-      if(curr_node->ptrs[i]==nullptr){
-        return curr_node;
-      } else if (curr_node->ptrs[i]!=wall){
-        toVisit.push(curr_node->ptrs[i]);
-        visited.insert(curr_node->ptrs[i]);
-      }
-    }
-  }
-  return wall;
-}
+
 
 
 
@@ -1024,4 +1209,92 @@ void printFinalGraphState() {
             }
         }
     }
+}
+
+String getFinalGraphString(){
+  std::unordered_set<std::shared_ptr<Node>> visited;
+    std::queue<std::shared_ptr<Node>> q;
+    String result;
+
+    if (graph.empty()) {
+        result +="(Empty graph)\n";
+        return result;
+    }
+
+    q.push(graph[0]); // Start from the first node in the graph
+
+    while (!q.empty()) {
+        std::shared_ptr<Node> node = q.front();
+        q.pop();
+
+        if (visited.find(node) != visited.end()) continue;
+        visited.insert(node);
+
+        if (node == nullptr || node == wall) {
+            continue;
+        }
+
+        result += node->uid;
+        result += ": { ";
+
+        for (int i = 0; i < 4; i++) {
+            if (node->ptrs[i] != nullptr && node->ptrs[i] != wall) {
+                result += (i == 0 ? "N: " : i == 1 ? "E: " : i == 2 ? "S: " : "W: ");
+                result += "(";
+                result += node->ptrs[i]->uid;
+                result += ", Cost: ";
+                result += node->costs[i];
+                result += ")";
+            } else {
+                result += (i == 0 ? "N: None" : i == 1 ? "E: None" : i == 2 ? "S: None" : "W: None");
+            }
+            if (i < 3) result += ", ";
+        }
+
+        result += " }\n";
+
+        // Enqueue neighbors for BFS
+        for (int i = 0; i < 4; i++) {
+            if (node->ptrs[i] != nullptr && node->ptrs[i] != wall && visited.find(node->ptrs[i]) == visited.end()) {
+                q.push(node->ptrs[i]);
+            }
+        }
+    }
+
+    return result;
+}
+
+
+void updateGraphInDatabase(String graph){
+  // Path to the Map object in the database
+  String mapPath = "/Map";
+
+  // Read the existing Map object from the database
+  FirebaseJson mapJson;
+  if (Firebase.RTDB.getJSON(&fbdo, mapPath)) {
+    mapJson = fbdo.jsonObject();
+    Serial.println("Successfully fetched the Map object.");
+  } else {
+    Serial.printf("Failed to fetch Map: %s\n", fbdo.errorReason().c_str());
+    return; // Exit if the fetch fails
+  }
+
+  // Generate a unique key for the new map (e.g., "Map2")
+  int mapCount = mapJson.iteratorBegin();
+  
+MB_String newMapKey;
+newMapKey="Map";
+newMapKey += mapCount + 1;
+
+  mapJson.iteratorEnd(); // Close iterator
+
+  // Add the new graph string to the Map object
+  mapJson.set(newMapKey.c_str(), graph);
+
+  // Write the updated Map object back to the database
+  if (Firebase.RTDB.set(&fbdo, mapPath, mapJson)) {
+    Serial.println("Successfully updated the Map object in the database.");
+  } else {
+    Serial.printf("Failed to update Map: %s\n", fbdo.errorReason().c_str());
+  }
 }
