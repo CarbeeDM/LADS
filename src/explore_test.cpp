@@ -3,7 +3,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <queue>
-#include <String>
 #include <iostream>
 #include <memory>
 
@@ -24,14 +23,12 @@ using namespace std;
 #define DATABASE_URL "https://ladsceng483-default-rtdb.europe-west1.firebasedatabase.app/"
 
 FirebaseData fbdo;
+FirebaseData fbdoStream;
+
 FirebaseAuth auth;
 FirebaseConfig config;
 // Path to the field you want to monitor
-String activeTaskPath ="/active_task";
-String deliveryLocation = "/active_task/delivery_location";
-String pickupLocation = "/active_task/pick_up_location";
 
-unsigned long sendDataPrevMillis=0;
 bool signupOK = false;
 // ------------------- RFID PINS ----------------------
 #define SS_PIN  5   // ESP32 pin for MFRC522 SS/SDA
@@ -100,11 +97,14 @@ vector<shared_ptr<Node>> targetpath;
 
 vector<String> orders;
 
-/*0: Waiting on Start
+/*
+  0: Waiting on Start
 	1: Exploration
 	2: Going to a node
 	3: Waiting for proceeding (app notified)
-	4: Going back to start node */
+	4: Going back to start node 
+*/
+
 int mode = 0;  
 
 bool backtrack = false;
@@ -132,7 +132,6 @@ bool handleIntersectionIfNeeded();
 
 void driveMotors(int leftSpeed, int rightSpeed); 
 void handleLineFollow(); 
-
 String getFinalGraphString();
 void updateTaskNodes();
 
@@ -145,7 +144,7 @@ void process_cmd(String cmd);
 void printFinalGraphState();
 void mode_set(int a);
 
-void updateGraphInDatabase(String graph);
+void universalStreamCallback(FirebaseStream data);
 void streamCallback_order(FirebaseStream data);
 void streamCallback_wait(FirebaseStream data);
 void streamTimeoutCallback(bool timeout);
@@ -166,14 +165,17 @@ void goToNode();
 void waitForPickUp();
 void updateGraphInDatabase(String graph);
 void mode_set(int mode);
+void readAllFields();
 
 // --------------- SETUP -------------------------------
 void setup()
 {
-  Serial.begin(9600);
+  Serial.begin(115200);
   Serial.println("Initializing...");
-
+  
   // ----- WIFI CONNECT -----
+  WiFi.setSleep(false);
+  
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("connecting to wifi");
   while(WiFi.status() != WL_CONNECTED){
@@ -185,43 +187,50 @@ void setup()
   Serial.println();
 
   // ----- FIREBASE SET UP -----
+  time_t now = time(nullptr);
+  Serial.print("Epoch time: ");
+  Serial.println((long)now);
+
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  while (!time(nullptr)) {
+      Serial.print(".");
+      delay(1000);
+  }
+  Serial.println("Time synced!");
+
   config.api_key=API_KEY;
   config.database_url=DATABASE_URL;
-  if(Firebase.signUp(&config,&auth,"","")){
-      Serial.println("signup OK");
-      signupOK=true;
+  if (Firebase.signUp(&config, &auth, "", "")) {
+    Serial.println("Anonymous sign-up OK");
+    signupOK = true;
   } else {
-      Serial.printf("%s\n", config.signer.signupError.message.c_str());
+    Serial.printf("Sign-up failed: %s\n", config.signer.signupError.message.c_str());
   }
-
   //config.token_status_callback = tokenStatusCallback;
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
 
-  if (Firebase.RTDB.beginStream(&fbdo, activeTaskPath)) {
-    Serial.println("Firebase stream started successfully.");
-    Firebase.RTDB.setStreamCallback(&fbdo, streamCallback_order, streamTimeoutCallback);
+  if (Firebase.RTDB.beginStream(&fbdoStream, "/")) {
+  Serial.println("Started a single stream from root '/'!");
+  Firebase.RTDB.setStreamCallback(&fbdoStream, universalStreamCallback, streamTimeoutCallback);
   } else {
-    Serial.printf("Could not start stream, %s\n", fbdo.errorReason().c_str());
-  }
-  if (Firebase.RTDB.beginStream(&fbdo, "/Robot/waiting")) {
-    Serial.println("Firebase stream started successfully.");
-    Firebase.RTDB.setStreamCallback(&fbdo, streamCallback_wait, streamTimeoutCallback);
-  } else {
-    Serial.printf("Could not start stream, %s\n", fbdo.errorReason().c_str());
+    Serial.printf("Could not start root stream: %s\n", fbdoStream.errorReason().c_str());
   }
 
+  //readAllFields();
+  
   // ----- MOTOR SETUP -----
   pinMode(motor1Pin1, OUTPUT);
   pinMode(motor1Pin2, OUTPUT);
   pinMode(motor2Pin1, OUTPUT);
   pinMode(motor2Pin2, OUTPUT);
 
-  ledcAttachPin(enable1Pin, pwmChannel1);
   ledcSetup(pwmChannel1, freq, resolution);
-
-  ledcAttachPin(enable2Pin, pwmChannel2);
   ledcSetup(pwmChannel2, freq, resolution);
+  
+  ledcAttachPin(enable1Pin, pwmChannel1);
+  ledcAttachPin(enable2Pin, pwmChannel2);
+  
 
   // ----- QTR SENSOR SETUP -----
   qtr.setTypeAnalog();
@@ -332,7 +341,8 @@ void reset_robot(){
 }
 void mode_set(int a){
   FirebaseJson json;
-
+  Serial.println("Mode is now: ");
+  Serial.println(a);
   if(a==3){
   json.set("waiting", true);
   if (Firebase.RTDB.set(&fbdo, "/robot/waiting", &json)) {
@@ -1300,4 +1310,129 @@ void updateTaskNodes() {
     Serial.printf("Failed to update task nodes: %s\n", fbdo.errorReason().c_str());
   }
 
+}
+
+void readAllFields() {
+  Serial.println("=== Reading all required fields from Realtime Database ===");
+
+  // a) Read the entire "Map/Map1"
+  if (Firebase.RTDB.getString(&fbdo, "/Map/Map1")) {
+    String map1Content = fbdo.stringData();
+    Serial.println("\n----- Map/Map1 -----");
+    Serial.println(map1Content);
+  } else {
+    Serial.printf("Failed to read Map/Map1: %s\n", fbdo.errorReason().c_str());
+  }
+
+  // b) Read "Robot/current_mode"
+  if (Firebase.RTDB.getInt(&fbdo, "/Robot/current_mode")) {
+    int currentMode = fbdo.intData();
+    Serial.printf("\nRobot/current_mode = %d\n", currentMode);
+  } else {
+    Serial.printf("Failed to read Robot/current_mode: %s\n", fbdo.errorReason().c_str());
+  }
+
+  // c) Read "Robot/current_node"
+  if (Firebase.RTDB.getString(&fbdo, "/Robot/current_node")) {
+    String currentNode = fbdo.stringData();
+    Serial.printf("\nRobot/current_node = %s\n", currentNode.c_str());
+  } else {
+    Serial.printf("Failed to read Robot/current_node: %s\n", fbdo.errorReason().c_str());
+  }
+
+  // d) Read "Robot/isBlocked"
+  if (Firebase.RTDB.getBool(&fbdo, "/Robot/isBlocked")) {
+    bool isBlocked = fbdo.boolData();
+    Serial.printf("\nRobot/isBlocked = %s\n", isBlocked ? "true" : "false");
+  } else {
+    Serial.printf("Failed to read Robot/isBlocked: %s\n", fbdo.errorReason().c_str());
+  }
+
+  // e) Read "Robot/task_nodes"
+  if (Firebase.RTDB.getString(&fbdo, "/Robot/task_nodes")) {
+    String taskNodes = fbdo.stringData();
+    Serial.printf("\nRobot/task_nodes = %s\n", taskNodes.c_str());
+  } else {
+    Serial.printf("Failed to read Robot/task_nodes: %s\n", fbdo.errorReason().c_str());
+  }
+
+  // f) Read "active_task/delivery_location"
+  if (Firebase.RTDB.getString(&fbdo, "/active_task/delivery_location")) {
+    String deliveryLoc = fbdo.stringData();
+    Serial.printf("\nactive_task/delivery_location = %s\n", deliveryLoc.c_str());
+  } else {
+    Serial.printf("Failed to read delivery_location: %s\n", fbdo.errorReason().c_str());
+  }
+
+  // g) Read "active_task/pick_up_location"
+  if (Firebase.RTDB.getString(&fbdo, "/active_task/pick_up_location")) {
+    String pickUpLoc = fbdo.stringData();
+    Serial.printf("\nactive_task/pick_up_location = %s\n", pickUpLoc.c_str());
+  } else {
+    Serial.printf("Failed to read pick_up_location: %s\n", fbdo.errorReason().c_str());
+  }
+
+  Serial.println("\n=== Finished reading all fields ===");
+}
+
+void universalStreamCallback(FirebaseStream data) {
+  Serial.println("\n=== universalStreamCallback Fired! ===");
+
+  // 1. If data is JSON, parse it
+  if (data.dataTypeEnum() == fb_esp_rtdb_data_type_json) {
+    FirebaseJson jsonData = data.jsonObject();
+    FirebaseJsonData result;
+
+    // Example: Check if "/Map/Map1" changed
+    if (jsonData.get(result, "/Map/Map1")) {
+      if (result.typeNum == FirebaseJson::JSON_STRING) {
+        String map1Content = result.stringValue;
+        Serial.print("Map/Map1 updated: ");
+        Serial.println(map1Content);
+      }
+    }
+
+    // Check if "/Robot/current_mode" changed
+    if (jsonData.get(result, "/Robot/current_mode")) {
+      if (result.typeNum == FirebaseJson::JSON_INT) {
+        int currentMode = result.intValue;
+        Serial.print("Robot/current_mode changed: ");
+        Serial.println(currentMode);
+        // You can do: mode = currentMode; 
+      }
+    }
+
+    // Check if "/Robot/task_nodes" changed
+    if (jsonData.get(result, "/Robot/task_nodes")) {
+      if (result.typeNum == FirebaseJson::JSON_STRING) {
+        String newTaskNodes = result.stringValue;
+        Serial.print("Robot/task_nodes changed: ");
+        Serial.println(newTaskNodes);
+      }
+    }
+
+    // Check if "/active_task/delivery_location" changed
+    if (jsonData.get(result, "/active_task/delivery_location")) {
+      if (result.typeNum == FirebaseJson::JSON_STRING) {
+        String newDelivery = result.stringValue;
+        Serial.print("active_task/delivery_location changed: ");
+        Serial.println(newDelivery);
+      }
+    }
+
+    // Check if "/active_task/pick_up_location" changed
+    if (jsonData.get(result, "/active_task/pick_up_location")) {
+      if (result.typeNum == FirebaseJson::JSON_STRING) {
+        String newPickup = result.stringValue;
+        Serial.print("active_task/pick_up_location changed: ");
+        Serial.println(newPickup);
+      }
+    }
+
+    // ...and so on for any other fields you want to check
+
+  } else {
+    // It's not JSON, maybe it's a boolean or something else
+    Serial.printf("Stream data type: %s\n", data.dataType().c_str());
+  }
 }
