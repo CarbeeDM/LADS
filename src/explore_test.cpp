@@ -336,6 +336,8 @@ void mode_set(int a){
   }
   }else if(a==1){
     reset_robot();
+  } else if(mode==1 && a==0){
+    updateGraphInDatabase(getFinalGraphString());
   }
 
   mode=a;
@@ -378,7 +380,7 @@ void readyForOrder(){
   String endName=orders[0];
 
   targetpath=djikstra(current_Node_Ptr->uid,endName);
-
+  updateTaskNodes();
   mode_set(2);
   orders.erase(orders.begin());
   return;
@@ -532,7 +534,7 @@ void streamCallback_wait(FirebaseStream data) {
           targetpath=djikstra(current_Node_Ptr->uid, startNodeName);
           mode_set(4);
         }
-        
+        updateTaskNodes();
       }else{return;}
     }
   } else {
@@ -1069,7 +1071,7 @@ vector<shared_ptr<Node>> djikstra(String startName, String endName){
   unordered_map<shared_ptr<Node>, int> distances;
 
   if(findNodeIndex(startName)==-1){ cerr<<"cant find start node"<<endl;return unvisited;}
-if(findNodeIndex(endName)==-1){ cerr<<"cant find end node"<<endl;return unvisited;}
+  if(findNodeIndex(endName)==-1){ cerr<<"cant find end node"<<endl;return unvisited;}
 
   auto get_smallest_distance_node = [&](const vector<shared_ptr<Node>> nodes){
     shared_ptr<Node> best_node;
@@ -1297,4 +1299,52 @@ newMapKey += mapCount + 1;
   } else {
     Serial.printf("Failed to update Map: %s\n", fbdo.errorReason().c_str());
   }
+}
+
+void updateTaskNodes() {
+  // Ensure targetpath has at least one node
+  if (targetpath.empty()) {
+    Serial.println("Target path is empty. Nothing to update.");
+    return;
+  }
+
+  String taskNodesStream;
+
+  // Build the task nodes string
+  for (size_t i = 0; i < targetpath.size(); ++i) {
+    if (i > 0) {
+      // Calculate the cost from the previous node to the current node
+      auto previousNode = targetpath[i - 1];
+      auto currentNode = targetpath[i];
+      int cost;
+      for(int i=0;i<previousNode->ptrs.size();i++){
+        if(previousNode->ptrs[i]==currentNode){
+          cost = previousNode->costs[i];
+        }
+      }
+      
+      
+
+      // Append to the task nodes string
+      taskNodesStream += "{";
+      taskNodesStream += currentNode->uid;
+      taskNodesStream += ",cost:";
+      taskNodesStream += cost;
+      taskNodesStream +="}";
+    } else {
+      // For the first node, only add its UID (no cost)
+      taskNodesStream += "{";
+      taskNodesStream +=targetpath[0]->uid;
+      taskNodesStream += ",cost:0}";
+    }
+  }
+
+
+
+  if (Firebase.RTDB.setString(&fbdo, "/Robot/task_nodes", taskNodesStream)) {
+    Serial.println("Updated task nodes successfully.");
+  } else {
+    Serial.printf("Failed to update task nodes: %s\n", fbdo.errorReason().c_str());
+  }
+
 }
