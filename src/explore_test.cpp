@@ -18,8 +18,8 @@
 using namespace std;
 
 //-------------------- FIREBASE -----------------------
-#define WIFI_SSID "cece"
-#define WIFI_PASSWORD "123123aa"
+#define WIFI_SSID "eduroam31"
+#define WIFI_PASSWORD "sekiztane1"
 #define API_KEY "AIzaSyD3BE-hRNRFyzfK1d98scXM5zG5w5iX3fw"
 #define DATABASE_URL "https://ladsceng483-default-rtdb.europe-west1.firebasedatabase.app/"
 
@@ -105,9 +105,9 @@ vector<String> orders;
 	2: Going to a node
 	3: Waiting for proceeding (app notified)
 	4: Going back to start node */
-int mode=1;  
+int mode = 0;  
 
-bool backtrack=false;
+bool backtrack = false;
 
 int currentNodeIndex = -1;              // Index of the current node in the graph
 int startNodeIndex = -1;                // Index of the start node in the graph
@@ -117,7 +117,7 @@ unsigned long ignoreRFIDUntil = 0;      // ignore RFID reads until this time
 unsigned long ignoreIntersectionUntil = 0;
 String last_read_tagUID = "";
 
-String startNodeName="";
+String startNodeName = "";
 // ------------------- FUNCTION DECLARATIONS -----------
 int  findNodeIndex(const String& uid); 
 
@@ -132,6 +132,9 @@ bool knownNode(shared_ptr<Node> n);
 
 void driveMotors(int leftSpeed, int rightSpeed); 
 void handleLineFollow(); 
+
+String getFinalGraphString();
+void updateTaskNodes();
 
 void rstVars();
 void turnL();
@@ -162,6 +165,8 @@ void ExplorationPhase();
 void readyForOrder(); 
 void goToNode();
 void waitForPickUp();
+void updateGraphInDatabase(String graph);
+void mode_set(int mode);
 
 // --------------- SETUP -------------------------------
 void setup()
@@ -331,7 +336,7 @@ void mode_set(int a){
 
   if(a==3){
   json.set("waiting", true);
-  if (Firebase.RTDB.set(&fbdo, "/robot/waiting", json)) {
+  if (Firebase.RTDB.set(&fbdo, "/robot/waiting", &json)) {
     Serial.println("Waiting updated in Firebase.");
   } else {
     Serial.printf("Failed to update waiting: %s\n", fbdo.errorReason().c_str());
@@ -348,7 +353,7 @@ void mode_set(int a){
   json.set("current_mode", mode);  // Set the 'current_mode' field to the new mode value
   
   // Write the updated mode to the Firebase Realtime Database under the 'robot' node
-  if (Firebase.RTDB.set(&fbdo, "/robot/current_mode", json)) {
+  if (Firebase.RTDB.set(&fbdo, "/robot/current_mode", &json)) {
     Serial.println("Mode updated in Firebase.");
   } else {
     Serial.printf("Failed to update mode: %s\n", fbdo.errorReason().c_str());
@@ -1296,7 +1301,7 @@ newMapKey += mapCount + 1;
   mapJson.set(newMapKey.c_str(), graph);
 
   // Write the updated Map object back to the database
-  if (Firebase.RTDB.set(&fbdo, mapPath, mapJson)) {
+  if (Firebase.RTDB.set(&fbdo, mapPath, &mapJson)) {
     Serial.println("Successfully updated the Map object in the database.");
   } else {
     Serial.printf("Failed to update Map: %s\n", fbdo.errorReason().c_str());
