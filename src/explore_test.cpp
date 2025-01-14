@@ -125,10 +125,10 @@ int  addNodePtr(const String uid, bool isRFID, int mask);
 
 
 bool checkForRFID();
-bool doesRFIDexist(String new_uid); 
+
 bool obstacleDetection();
 bool handleIntersectionIfNeeded();
-bool knownNode(shared_ptr<Node> n);
+
 
 void driveMotors(int leftSpeed, int rightSpeed); 
 void handleLineFollow(); 
@@ -142,17 +142,17 @@ void merge_two_nodes(shared_ptr<Node> trueNode,shared_ptr<Node> oldNode);
 void link_via_direction(shared_ptr<Node> n, unsigned long cost);
 void process_cmd(String cmd);
 void printFinalGraphState();
+void mode_set(int a);
 
 void universalStreamCallback(FirebaseStream data);
 void streamCallback_order(FirebaseStream data);
 void streamCallback_wait(FirebaseStream data);
 void streamTimeoutCallback(bool timeout);
-
+void updateTaskNodes();
 String detectIntersection();
 String createIntersectionID(String type, bool rfid); 
+String getFinalGraphString();
 
-
-vector<shared_ptr<Node>> pathToNode(String target_uid);
 vector<shared_ptr<Node>> djikstra(String startName, String endName);
 
 tuple<String, bool, bool> interpret_triple(tuple<String, String, String> triple);
@@ -573,17 +573,7 @@ void rstVars(){
   ignoreRFIDUntil=0;
 }
 
-/**
- * @brief check if a given node has all its corners mapped out completely
- */
-bool knownNode(shared_ptr<Node> n){
-  for(int i=0;i<n->ptrs.size();i++){
-    if(n->ptrs[i]==nullptr){
-      return false;
-    }
-  }
-  return true;
-}
+
 
 /**
  * @brief Find node index in global 'graph' by its UID
@@ -765,12 +755,26 @@ bool checkForRFID()
  */
 String detectIntersection() {
 
+if(millis() < ignoreIntersectionUntil ){
+        return "I";
+    }
+  ignoreIntersectionUntil=millis()+2000;
+  qtr.readCalibrated(sensorValues);
   int threshold =400; // General threshold adjustment
 
-  bool leftSide = false;
-  bool rightSide = false;
+  bool leftSide = (sensorValues[0] > threshold &&
+                   sensorValues[1] > threshold &&
+                   sensorValues[2] > threshold);
+  bool rightSide = (sensorValues[3] > threshold &&
+                    sensorValues[4] > threshold &&
+                    sensorValues[5] > threshold);
 
-  bool nothing = false;
+  bool nothing = (sensorValues[0] < threshold &&
+                  sensorValues[1] < threshold &&
+                  sensorValues[2] < threshold &&
+                  sensorValues[3] < threshold &&
+                  sensorValues[4] < threshold &&
+                  sensorValues[5] < threshold);
 
   // Determine intersection type
   if (leftSide && rightSide) {
@@ -1061,24 +1065,6 @@ void merge_two_nodes(shared_ptr<Node> trueNode,shared_ptr<Node> oldNode){
 
 }
 
-/**
- * @brief check if a given rfid exists in the graph
- */
-bool doesRFIDexist(String new_uid){
-  for(shared_ptr<Node> i : graph){
-    if(i->uid==new_uid){
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * @brief find a nodePtr that doesnt have all its neighbors mapped.
- * returns &wall if all nodes have been mapped.
- */
-
-
 
 
 vector<shared_ptr<Node>> djikstra(String startName, String endName){
@@ -1143,45 +1129,6 @@ for (shared_ptr<Node> node = target_node;node!=nullptr;node=parentMap[node]){
 reverse(path.begin(), path.end());
 cout<<"successful djikstra run"<<endl;
 return path;
-}
-/**
- * @brief returns a ptr list of nodes that lead to a target_uid.
- * [current_node*, ptr1, ptr2, ptr3, target_uid*]
- */
-vector<shared_ptr<Node>> pathToNode(String target_uid){
-  queue<shared_ptr<Node>> toVisit;
-  unordered_map<shared_ptr<Node>, shared_ptr<Node>> parentMap; 
-  // To store the parent of each node 
-  unordered_set<shared_ptr<Node>> visited;
-  toVisit.push(current_Node_Ptr);
-  visited.insert(current_Node_Ptr);
-  parentMap[current_Node_Ptr] = nullptr;
-  if(findNodeIndex(target_uid)==-1){vector<shared_ptr<Node>> nopath={}; return nopath;}
-  ///while
-  while(!toVisit.empty()){
-    shared_ptr<Node> curr_node=toVisit.front();
-    toVisit.pop();
-
-    if(curr_node->uid ==target_uid){
-      vector<shared_ptr<Node>> path;
-      for (shared_ptr<Node> node = curr_node;node!=nullptr;node=parentMap[node]){
-        path.push_back(node);
-      }
-      reverse(path.begin(), path.end());
-      return path;
-    }
-
-    for (shared_ptr<Node> ptr_neighbor : curr_node->ptrs){
-        if (ptr_neighbor!=nullptr && ptr_neighbor!=wall){
-          if (visited.find(ptr_neighbor) == visited.end()){
-            toVisit.push(ptr_neighbor);
-            visited.insert(ptr_neighbor);
-            parentMap[ptr_neighbor] = curr_node;
-          }
-        }
-    }
-  }
-  vector<shared_ptr<Node>> nopath={}; return nopath;
 }
 
 void printFinalGraphState() {
