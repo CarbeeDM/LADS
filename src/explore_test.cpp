@@ -140,14 +140,16 @@ void merge_two_nodes(shared_ptr<Node> trueNode,shared_ptr<Node> oldNode);
 void link_via_direction(shared_ptr<Node> n, unsigned long cost);
 void process_cmd(String cmd);
 void printFinalGraphState();
+void mode_set(int a);
 
+void updateGraphInDatabase(String graph);
 void streamCallback_order(FirebaseStream data);
 void streamCallback_wait(FirebaseStream data);
 void streamTimeoutCallback(bool timeout);
-
+void updateTaskNodes();
 String detectIntersection();
 String createIntersectionID(String type, bool rfid); 
-
+String getFinalGraphString();
 
 vector<shared_ptr<Node>> pathToNode(String target_uid);
 vector<shared_ptr<Node>> djikstra(String startName, String endName);
