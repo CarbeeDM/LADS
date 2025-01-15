@@ -245,7 +245,7 @@ void setup()
 
   // ----- CALIBRATION -----
   Serial.println("Calibrating sensors. Move the robot over the line...");
-  for (uint16_t i = 0; i < 10; i++)
+  for (uint16_t i = 0; i < 100; i++)
   {
     qtr.calibrate();
     if (i % 50 == 0) {
@@ -507,12 +507,14 @@ void ExplorationPhase(){
 }
 
 void waitForPickUp(){//3
+driveMotors(0,0);
   //do nothing. streamCallback_wait() will change mode.
   //if necessery, add timer here.
 }
 
 void readyForOrder(){
   //checks if pickupFrom has been given value by streamCallback.
+  driveMotors(0,0);
   if(pickupFrom!=""){
   String endName=pickupFrom;
   targetpath=djikstra(current_Node_Ptr->uid,endName);
@@ -1093,7 +1095,8 @@ bool checkForRFID()
       last_read_tagUID.toUpperCase();
       rfid.PICC_HaltA();
       rfid.PCD_StopCrypto1();
-
+      Serial.print("RFID TAG HERE: ");
+      Serial.println(last_read_tagUID);
       
       return true;
     }
@@ -1170,6 +1173,8 @@ bool handleIntersectionIfNeeded() {
     // Determine intersection type
     String type = detectIntersection();
     if(type=="I"){return false;}
+    Serial.print("CORNER HERE, TYPE: ");
+    Serial.println(type);
     process_cmd(type);
 
     return true;
@@ -1179,17 +1184,21 @@ void turnL(){direction++;direction=(direction+4)%4;
       driveMotors(-220, 220);  // Pivot left
       delay(500);
       Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
+      Serial.println("turning Left");
       }
 void turnR(){direction--;direction=(direction+4)%4;
       driveMotors(220, -220);  // Pivot left
       delay(500);
       Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
+      Serial.println("turning Right");
       }
 
 /**
  * @brief Add a new node or do backtracking. S for startNode.
  */
 void process_cmd(String cmd){
+  Serial.print("cmd: ");
+  Serial.println(cmd);
     if(current_Node_Ptr==nullptr){
       if(cmd=="P")
       {
@@ -1858,12 +1867,12 @@ void universalStreamCallback(FirebaseStream data) {
             {
               targetpath = djikstra(current_Node_Ptr->uid, deliverTo);
               deliverTo="";
-              mode_set(1);
+              mode_set(2);
             }
             else if (pickupFrom!=""){
               targetpath = djikstra(current_Node_Ptr->uid, pickupFrom);
               pickupFrom="";
-              mode_set(1);
+              mode_set(2);
             } else
             {
               targetpath = djikstra(current_Node_Ptr->uid, startNodeName);
