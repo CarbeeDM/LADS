@@ -1186,13 +1186,21 @@ bool handleIntersectionIfNeeded() {
 }
 
 void turnL(){direction++;direction=(direction+4)%4;
-      driveMotors(-220, 220);  // Pivot left
+      driveMotors(0, 0);  // stop
+      delay(200);
+      driveMotors(-255, -255);  // go back
+      delay(200);
+      driveMotors(-255, 255);  // Pivot left
       delay(500);
       Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
       Serial.println("turning Left");
       }
 void turnR(){direction--;direction=(direction+4)%4;
-      driveMotors(220, -220);  // Pivot left
+      driveMotors(0, 0);  // stop
+      delay(200);
+      driveMotors(-255, -255);  // go back
+      delay(200);
+      driveMotors(255, -255);  // Pivot left
       delay(500);
       Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
       Serial.println("turning Right");
