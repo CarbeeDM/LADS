@@ -12,6 +12,7 @@
 #include <WiFi.h>
 #include <Firebase_ESP_Client.h>
 #include <MFRC522.h>
+#include <regex>
 
 
 using namespace std;
@@ -81,6 +82,7 @@ struct Node {
   String uid;         // e.g. "RFID_XXYY" or "INT_1", "INT_2"
   bool isRFID;
   // adjacency: which other nodes connect to this node?
+  vector<String> neighbors={"","","",""};
   vector<shared_ptr<Node>> ptrs={nullptr,nullptr,nullptr,nullptr};
   std::vector<unsigned long> costs={0,0,0,0};  // travel time in ms
   
@@ -143,7 +145,7 @@ void merge_two_nodes(shared_ptr<Node> trueNode,shared_ptr<Node> oldNode);
 void link_via_direction(shared_ptr<Node> n, unsigned long cost);
 void process_cmd(String cmd);
 void printFinalGraphState();
-void mode_set(int a);
+void parse_graph(const std::string &input_string);
 
 void universalStreamCallback(FirebaseStream data);
 void streamCallback_order(FirebaseStream data);
@@ -166,7 +168,10 @@ void goToNode();
 void waitForPickUp();
 void updateGraphInDatabase(String graph);
 void mode_set(int mode);
+void mode_set_firebase(int a);
+void reset_robot();
 void readAllFields();
+
 
 // --------------- SETUP -------------------------------
 void setup()
@@ -240,7 +245,7 @@ void setup()
 
   // ----- CALIBRATION -----
   Serial.println("Calibrating sensors. Move the robot over the line...");
-  for (uint16_t i = 0; i < 200; i++)
+  for (uint16_t i = 0; i < 10; i++)
   {
     qtr.calibrate();
     if (i % 50 == 0) {
@@ -280,13 +285,15 @@ void setup()
 
   segmentStartTime = millis(); // start measuring travel time from the initial node
   ignoreIntersectionUntil=millis();
-  mode_set(1);
+//  mode_set(1);
   cout<<"starting..."<<endl;
+  //updateGraphInDatabase("new graph");
 }
 // --------------- MAIN LOOP ---------------------------
 void loop()
 {
-  /* switch(mode)
+  
+  switch(mode)
   {
     case 0:
       readyForOrder();
@@ -306,7 +313,7 @@ void loop()
 
     case 4:
       goToNode();//go back to start(targetpath given by streamCallback_wait)
-  } */
+  }
   
 }
 
@@ -342,13 +349,14 @@ void reset_robot(){
     deliverTo="";
 
 }
+
 void mode_set(int a){
-  FirebaseJson json;
+
   Serial.println("Mode is now: ");
   Serial.println(a);
   if(a==3){
-  json.set("waiting", true);
-  if (Firebase.RTDB.set(&fbdo, "/robot/waiting", &json)) {
+
+  if (Firebase.RTDB.setBool(&fbdo, "/Robot/waiting", true)) {
     Serial.println("Waiting updated in Firebase.");
   } else {
     Serial.printf("Failed to update waiting: %s\n", fbdo.errorReason().c_str());
@@ -362,8 +370,7 @@ void mode_set(int a){
   mode=a;
   //update firebase
   
-  json.set("current_mode", mode);  // Set the 'current_mode' field to the new mode value
-  
+
   // Write the updated mode to the Firebase Realtime Database under the 'robot' node
   if (Firebase.RTDB.setInt(&fbdo, "/Robot/current_mode", mode)) {
     Serial.println("Mode updated in Firebase.");
@@ -372,23 +379,124 @@ void mode_set(int a){
   }
 
 }
+void mode_set_firebase(int a){
+  if(mode==0){
+    if(a==1){
+      reset_robot();
+      mode=1;
+    }
+    if (a == 2)
+    {
+      String pickUpLoc;
+      String deliveryLoc;
+      String map1Content;
+      Serial.println("fetching map");
+      // a) Read the entire "Map/Map1"
+      if (Firebase.RTDB.getString(&fbdo, "/Map/Map1"))
+      {
+        Serial.printf("Map fetched.");
+        map1Content = fbdo.stringData();
+      }
+      else
+      {
+        Serial.printf("Failed to read Map/Map1: %s\n", fbdo.errorReason().c_str());
+        Serial.println("aborting mode change, resetting mode to 0.");
+        if (Firebase.RTDB.setInt(&fbdo, "/Robot/current_mode", 0))
+        {
+          Serial.println("Mode updated in Firebase.");
+        }
+        else
+        {
+          Serial.printf("Failed to update mode: %s\n", fbdo.errorReason().c_str());
+        }
+      }
+      // f) Read "active_task/delivery_location"
+      if (Firebase.RTDB.getString(&fbdo, "/active_task/delivery_location"))
+      {
+        deliveryLoc = fbdo.stringData();
+        Serial.printf("\nactive_task/delivery_location = %s\n", deliveryLoc.c_str());
+      }
+      else
+      {
+        Serial.printf("Failed to read delivery_location: %s\n", fbdo.errorReason().c_str());
+        Serial.println("aborting mode change, resetting mode to 0.");
+        if (Firebase.RTDB.setInt(&fbdo, "/Robot/current_mode", 0))
+        {
+          Serial.println("Mode updated in Firebase.");
+        }
+        else
+        {
+          Serial.printf("Failed to update mode: %s\n", fbdo.errorReason().c_str());
+        }
+      }
+
+      // g) Read "active_task/pick_up_location"
+      if (Firebase.RTDB.getString(&fbdo, "/active_task/pick_up_location"))
+      {
+        pickUpLoc = fbdo.stringData();
+        Serial.printf("\nactive_task/pick_up_location = %s\n", pickUpLoc.c_str());
+      }
+      else
+      {
+        Serial.printf("Failed to read pick_up_location: %s\n", fbdo.errorReason().c_str());
+        Serial.println("aborting mode change, resetting mode to 0.");
+        if (Firebase.RTDB.setInt(&fbdo, "/Robot/current_mode", 0))
+        {
+          Serial.println("Mode updated in Firebase.");
+        }
+        else
+        {
+          Serial.printf("Failed to update mode: %s\n", fbdo.errorReason().c_str());
+        }
+      }
+
+      
+      deliverTo = deliveryLoc;
+
+      
+      pickupFrom = pickUpLoc;
+
+      Serial.println("\n----- Map/Map1 -----");
+      //Serial.println(map1Content);
+      Serial.println("\n----- Map/Map1 -----");
+
+      parse_graph(map1Content.c_str());
+      Serial.println("map parsed.");
+
+      if (pickupFrom != "")
+      {
+        String endName = pickupFrom;
+        targetpath = djikstra(current_Node_Ptr->uid, endName);
+        pickupFrom = "";
+        updateTaskNodes();
+        return;
+      }
+      else
+      {
+        return;
+      } 
+    }
+  }
+}
+
+
 void ExplorationPhase(){
   handleLineFollow();
 
   if(millis() > ignoreIntersectionUntil ){
         handleIntersectionIfNeeded();
-        printFinalGraphState();
+        //printFinalGraphState();
     }
   if(millis()> ignoreRFIDUntil){
         if(checkForRFID()){
           process_cmd("P");
-          printFinalGraphState();
+          //printFinalGraphState();
         };
     }
     
 }
 
-void waitForPickUp(){
+void waitForPickUp(){//3
   //do nothing. streamCallback_wait() will change mode.
   //if necessery, add timer here.
 }
@@ -465,6 +573,7 @@ void goToNode(){
             }
 
             current_Node_Ptr=current_Node_Ptr->ptrs[direction];
+            Firebase.RTDB.setString(&fbdo, "/Robot/current_node", current_Node_Ptr->uid);
             cout<<"I am now at: "<< current_Node_Ptr->uid<<endl;
             i+=graph[currentNodeIndex]->ptrs.size();//break from for loop
             
@@ -501,6 +610,229 @@ void goToNode(){
 // -----------------------------------------------------
 //                 HELPER FUNCTIONS
 // -----------------------------------------------------
+
+void parse_graph2(const std::string &input_string){
+  Serial.println("parsing graph string!");
+    
+    for (auto& node : graph) {
+      node->ptrs.clear(); 
+    }graph.clear();
+    Serial.println("graph cleared!");
+    current_Node_Ptr=nullptr;
+    startNodeName="START_NODE";
+    std::istringstream iss(input_string);
+    std::string line;
+
+    // Regex to match node lines like "S1: { N: (T1, Cost: 6), E: None, S: (R5, Cost: 1), W: None }"
+    std::regex node_regex(R"((\w+):\s*\{(.*)\})");
+
+    // Regex to match each neighbor direction/cost pair: "N: (T1, Cost: 6)"
+    std::regex neighbor_regex(R"(([NSEW]):\s*\((\w+),\s*Cost:\s*(\d+)\))");
+
+    while (std::getline(iss, line)){
+      Serial.println("while iteration begins!");
+      smatch node_match;
+      Serial.print("1");
+      if (std::regex_search(line, node_match, node_regex)) {
+        Serial.print("2");
+          std::string node = node_match[1];
+          Serial.print("3");
+          std::string neighbors_str = node_match[2];
+          Serial.print("regex if. node: ");
+          Serial.print(node.c_str());
+          Serial.print(" -- ");
+          Serial.println(neighbors_str.c_str());
+
+          int nodeIndex=addNodePtr(node.c_str(),false,0);
+
+          // Find all valid neighbors
+          auto nb_begin = std::sregex_iterator(neighbors_str.begin(), neighbors_str.end(), neighbor_regex);
+          auto nb_end = std::sregex_iterator();
+
+          for (auto it = nb_begin; it != nb_end; ++it) {
+            Serial.print("[]");
+                std::smatch m = *it;
+                char direction = m[1].str()[0];
+                std::string neighbor = m[2];
+                int cost = std::stoi(m[3]);
+                int dir=(direction == 'N' ? 0 : direction == 'E' ? 3 : direction == 'S' ? 2 : 3);
+                graph[nodeIndex]->neighbors[dir]=neighbor.c_str();
+                graph[nodeIndex]->costs[dir]=cost;
+            }
+            Serial.println();
+            Serial.println("for loop ends.");
+      }
+
+    }
+    Serial.println("while loop ends, stitching begins!");
+      for(auto& node : graph){
+        Serial.print(node->uid);
+        Serial.print("->");
+        for(int i=0; i<node->ptrs.size();i++){
+          if (node->ptrs[i] != nullptr && node->ptrs[i] != wall)
+          {
+            if (findNodeIndex(node->neighbors[i]) != -1)
+            {
+              Serial.print("[1]");
+              node->ptrs[i] = graph[findNodeIndex(node->neighbors[i])];
+            }else{
+              Serial.print("[X]");
+            }
+          } else {
+            Serial.print("[0]");
+          }
+        }
+        Serial.println();
+      }
+      Serial.println("stitching ends, start node selecting");
+      if(findNodeIndex("START_NODE")!=-1){
+            current_Node_Ptr=graph[(findNodeIndex("START_NODE"))];
+            Firebase.RTDB.setString(&fbdo, "/Robot/current_node", current_Node_Ptr->uid);
+          }else{
+            Serial.println("ERROR: NO \"START_NODE\" IN PARSED MAP");
+          }
+
+}
+
+std::vector<std::string> splitOutsideParentheses(const std::string& str) {
+    std::vector<std::string> result;
+    std::string current;
+    int parenthesesDepth = 0;
+
+    for (char c : str) {
+        if (c == ',' && parenthesesDepth == 0) {
+            result.push_back(current);
+            current.clear();
+        } else {
+            if (c == '(') ++parenthesesDepth;
+            if (c == ')') --parenthesesDepth;
+            current += c;
+        }
+    }
+
+    if (!current.empty()) {
+        result.push_back(current);
+    }
+
+    return result;
+}
+
+void parse_graph(const std::string &input_string) {
+    Serial.println("Parsing graph string...");
+    
+    // Clear the graph and reset the state
+    for (auto& node : graph) {
+      node->ptrs.clear(); 
+    }
+    graph.clear();
+    current_Node_Ptr = nullptr;
+    startNodeName = "START_NODE";
+    Serial.println("Graph cleared!");
+
+    // Map for direction to index
+    std::unordered_map<char, int> direction_map = {
+        {'N', 0}, {'E', 1}, {'S', 2}, {'W', 3}
+    };
+
+    std::istringstream iss(input_string);
+    std::string line;
+
+    while (std::getline(iss, line, '}')) {
+      Serial.println("");
+      Serial.println("-<>-");
+        line = line + "}"; // Add back the closing brace
+
+        // Find the node name and its neighbors
+        size_t colon_pos = line.find(":");
+        if (colon_pos == std::string::npos) {
+            Serial.println("Invalid line format, skipping.");
+            continue;
+        }
+
+        std::string node_name = line.substr(0, colon_pos);
+        node_name.erase(remove(node_name.begin(), node_name.end(), ' '), node_name.end()); // Trim spaces
+
+        size_t brace_pos = line.find("{", colon_pos);
+        if (brace_pos == std::string::npos) {
+            Serial.print("No neighbors found for node: ");
+            Serial.println(node_name.c_str());
+            continue;
+        }
+
+        std::string neighbors_str = line.substr(brace_pos + 1, line.length() - brace_pos - 2);
+
+        // Add the node
+        int nodeIndex = addNodePtr(node_name.c_str(), false, 0);
+
+        // Parse neighbors
+        std::istringstream neighbors_stream(neighbors_str);
+        std::string neighbor_entry;
+
+        auto neighbor_entries = splitOutsideParentheses(neighbors_str);
+        for (const auto& neighbor_entry : neighbor_entries) {
+          Serial.print(":");
+            size_t colon = neighbor_entry.find(":");
+            if (colon == std::string::npos) continue;
+
+            char direction = neighbor_entry[colon - 1]; // 'N', 'E', 'S', or 'W'
+            if (direction_map.find(direction) == direction_map.end()) continue;
+
+            int dir = direction_map[direction];
+            size_t open_paren = neighbor_entry.find("(");
+            size_t close_paren = neighbor_entry.find(")");
+Serial.print(neighbor_entry.c_str());Serial.print(">");
+            if (open_paren != std::string::npos && close_paren != std::string::npos) {
+                std::string neighbor_info = neighbor_entry.substr(open_paren + 1, close_paren - open_paren - 1);
+                size_t cost_pos = neighbor_info.find(", Cost: ");
+                Serial.print(".");
+                if (cost_pos != std::string::npos) {
+                  Serial.print(",");
+                    std::string neighbor_name = neighbor_info.substr(0, cost_pos);
+                    int cost = std::stoi(neighbor_info.substr(cost_pos + 8));
+                    graph[nodeIndex]->neighbors[dir] = neighbor_name.c_str();
+                    graph[nodeIndex]->costs[dir] = cost;
+                }
+            }
+        }
+    }
+    Serial.println("");
+    // Stitch the graph: convert neighbor names to pointers
+    Serial.println("Stitching begins!");
+    for (auto& node : graph) {
+        Serial.print(node->uid);
+        Serial.print("->");
+        for (int i = 0; i < 4; i++) {
+            if (node->neighbors[i]!="") {
+                int neighborIndex = findNodeIndex(node->neighbors[i]);
+                Serial.print("[");
+                Serial.print(neighborIndex);
+                Serial.print("-");
+                Serial.print(node->neighbors[i]);
+                Serial.print("-");
+                if (neighborIndex != -1) {
+                    node->ptrs[i] = graph[neighborIndex];
+                    Serial.print("1]");
+                } else {
+                    Serial.print("X]");
+                }
+            } else {
+                Serial.print("0]");
+            }
+        }
+        Serial.println();
+    }
+
+    // Set the start node
+    Serial.println("Stitching ends, selecting start node...");
+    int startIndex = findNodeIndex("START_NODE");
+    if (startIndex != -1) {
+        current_Node_Ptr = graph[startIndex];
+        Serial.print("Start node set: ");
+        Serial.println(current_Node_Ptr->uid);
+    } else {
+        Serial.println("ERROR: NO \"START_NODE\" IN PARSED MAP");
+    }
+}
 
 void streamCallback_order(FirebaseStream data) {
   Serial.println("Data changed!");
@@ -835,10 +1167,12 @@ bool handleIntersectionIfNeeded() {
 void turnL(){direction++;direction=(direction+4)%4;
       driveMotors(-220, 220);  // Pivot left
       delay(500);
+      Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
       }
 void turnR(){direction--;direction=(direction+4)%4;
       driveMotors(220, -220);  // Pivot left
       delay(500);
+      Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
       }
 
 /**
@@ -872,7 +1206,7 @@ void process_cmd(String cmd){
         int newNodeIndex=addNodePtr(startNodeName, false, mask);
 
         current_Node_Ptr=graph[newNodeIndex];
-
+Firebase.RTDB.setString(&fbdo, "/Robot/current_node", current_Node_Ptr->uid);
         //tuple <String, shared_ptr<Node>> tup=make_tuple(cmd,current_Node_Ptr);
         cmd_stack.push_back(make_tuple(cmd,current_Node_Ptr));
         return;
@@ -884,6 +1218,7 @@ void process_cmd(String cmd){
         segmentStartTime = millis();
         link_via_direction(graph[findNodeIndex(startNodeName)],travelTime);
         current_Node_Ptr=graph[findNodeIndex(startNodeName)];
+        Firebase.RTDB.setString(&fbdo, "/Robot/current_node", current_Node_Ptr->uid);
         printFinalGraphState();
         driveMotors(-220, -220);  // back up before the start node
         delay(1000);
@@ -950,7 +1285,7 @@ void process_cmd(String cmd){
       link_via_direction(graph[newNodeIndex], travelTime);
 
       current_Node_Ptr=graph[newNodeIndex];
-
+Firebase.RTDB.setString(&fbdo, "/Robot/current_node", current_Node_Ptr->uid);
       //make tie
       //tuple <String, shared_ptr<Node>> tup=make_tuple(cmd,current_Node_Ptr);
       cmd_stack.push_back(make_tuple(cmd,current_Node_Ptr));
@@ -959,6 +1294,7 @@ void process_cmd(String cmd){
     if(cmd_stack.size()<2){
       newNodeIndex=addNodePtr(UID, isRFID, mask);
       current_Node_Ptr=graph[newNodeIndex];
+      Firebase.RTDB.setString(&fbdo, "/Robot/current_node", current_Node_Ptr->uid);
       //make tie
       //tuple <String, shared_ptr<Node>> tup=make_tuple(cmd,current_Node_Ptr);
         cmd_stack.push_back(make_tuple(cmd,current_Node_Ptr));
@@ -969,6 +1305,7 @@ void process_cmd(String cmd){
     if(get<0>(u_tuple)!="U"){
       newNodeIndex=addNodePtr(UID, isRFID, mask);
       current_Node_Ptr=graph[newNodeIndex];
+      Firebase.RTDB.setString(&fbdo, "/Robot/current_node", current_Node_Ptr->uid);
       //make tie
       //tuple <String, shared_ptr<Node>> tup=make_tuple(cmd,current_Node_Ptr);
         cmd_stack.push_back(make_tuple(cmd,current_Node_Ptr));
@@ -995,6 +1332,7 @@ void process_cmd(String cmd){
       segmentStartTime = millis();
       link_via_direction(graph[newNodeIndex], travelTime);
       current_Node_Ptr=graph[newNodeIndex];
+      Firebase.RTDB.setString(&fbdo, "/Robot/current_node", current_Node_Ptr->uid);
       merge_two_nodes(current_Node_Ptr, get<1>(y_tuple));
       //merge in backtrace(y_node,cmd)
       if(decision=="L"){
@@ -1408,9 +1746,11 @@ void universalStreamCallback(FirebaseStream data) {
         int currentMode = result.intValue;
         Serial.print("Robot/current_mode changed: ");
         Serial.println(currentMode);
+        //mode_set_firebase(currentMode);
         // You can do: mode = currentMode; 
       }
     }
+    
 
     // Check if "/Robot/task_nodes" changed
     if (jsonData.get(result, "/Robot/task_nodes")) {
@@ -1418,25 +1758,6 @@ void universalStreamCallback(FirebaseStream data) {
         String newTaskNodes = result.stringValue;
         Serial.print("Robot/task_nodes changed: ");
         Serial.println(newTaskNodes);
-      }
-    }
-
-    // Check if "/active_task/pick_up_location" changed
-    if (jsonData.get(result, "/active_task/pick_up_location")) {
-      if (result.typeNum == FirebaseJson::JSON_STRING) {
-        String newPickup = result.stringValue;
-        Serial.print("active_task/pick_up_location changed: ");
-        Serial.println(newPickup);
-        pickupFrom=newPickup;
-      }
-    }
-    // Check if "/active_task/delivery_location" changed
-    if (jsonData.get(result, "/active_task/delivery_location")) {
-      if (result.typeNum == FirebaseJson::JSON_STRING) {
-        String newDelivery = result.stringValue;
-        Serial.print("active_task/delivery_location changed: ");
-        Serial.println(newDelivery);
-        deliverTo=newDelivery;
       }
     }
 
@@ -1456,12 +1777,12 @@ void universalStreamCallback(FirebaseStream data) {
             {
               targetpath = djikstra(current_Node_Ptr->uid, deliverTo);
               deliverTo="";
-              mode_set(1);
+              mode_set(2);
             }
             else if (pickupFrom!=""){
               targetpath = djikstra(current_Node_Ptr->uid, pickupFrom);
               pickupFrom="";
-              mode_set(1);
+              mode_set(2);
             } else
             {
               targetpath = djikstra(current_Node_Ptr->uid, startNodeName);
@@ -1487,25 +1808,19 @@ void universalStreamCallback(FirebaseStream data) {
       Serial.print("Map/Map1 updated: ");
       Serial.println(map1Content);
     }
-    else if (data.dataPath() == "/active_task/delivery_location")
+    else if (data.dataPath() == "/Robot/direction")
     {
-      String deliveryLocation = data.stringData();
-      Serial.print("Delivery Location changed to: ");
-      Serial.println(deliveryLocation);
-      deliverTo=deliveryLocation;
-    }
-    else if (data.dataPath() == "/active_task/pick_up_location")
-    {
-      String pickUpLocation = data.stringData();
-      Serial.print("Pick-Up Location changed to: ");
-      Serial.println(pickUpLocation);
-      pickupFrom=pickUpLocation;
+      int dir = data.intData();
+      Serial.print("/Robot/direction changed to: ");
+      Serial.println(dir);
+      direction=dir%4;
     }
     else if (data.dataPath() == "/Robot/current_mode")
     {
       int Mod = data.intData();
       Serial.print("/Robot/current_mode changed to: ");
       Serial.println(Mod);
+      mode_set_firebase(Mod);
     }
     else if (data.dataPath() == "/Robot/task_nodes")
     {
