@@ -1280,9 +1280,9 @@ void updateTaskNodes() {
       auto previousNode = targetpath[i - 1];
       auto currentNode = targetpath[i];
       int cost;
-      for(int i=0;i<previousNode->ptrs.size();i++){
-        if(previousNode->ptrs[i]==currentNode){
-          cost = previousNode->costs[i];
+      for(int j=0;j<previousNode->ptrs.size();i++){
+        if(previousNode->ptrs[j]==currentNode){
+          cost = previousNode->costs[j];
         }
       }
       
