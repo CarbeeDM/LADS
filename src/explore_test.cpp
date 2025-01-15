@@ -381,10 +381,14 @@ void mode_set(int a){
 
 }
 void mode_set_firebase(int a){
+  Serial.print("old mode: ");
+  Serial.println(mode);
+
+  Serial.print("mode entered by DB: ");
+  Serial.println(a);
   if(mode==0){
     if(a==1){
       reset_robot();
-      mode=1;
     }
     if (a == 2)
     {
@@ -481,6 +485,8 @@ void mode_set_firebase(int a){
       } 
     }
   }
+
+mode=a;
 }
 
 
