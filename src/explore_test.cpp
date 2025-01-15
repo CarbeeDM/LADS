@@ -1051,18 +1051,31 @@ if(millis() < ignoreIntersectionUntil ){
                   sensorValues[3] < threshold &&
                   sensorValues[4] < threshold &&
                   sensorValues[5] < threshold);
-  for( uint16_t val : sensorValues){
+  
+  // Determine intersection type
+  if (leftSide && rightSide) {
+    for( uint16_t val : sensorValues){
     Serial.print(val);
     Serial.print("  ");
   }
-  // Determine intersection type
-  if (leftSide && rightSide) {
     return "T";  // T or + intersection
   } else if (leftSide) {
+    for( uint16_t val : sensorValues){
+    Serial.print(val);
+    Serial.print("  ");
+  }
     return "L";  // Left intersection
   } else if (rightSide) {
+    for( uint16_t val : sensorValues){
+    Serial.print(val);
+    Serial.print("  ");
+  }
     return "R";  // Right intersection
   } else if(nothing){
+    for( uint16_t val : sensorValues){
+    Serial.print(val);
+    Serial.print("  ");
+  }
     return "U";
   } else {
     return "I";  // Unknown or straight
