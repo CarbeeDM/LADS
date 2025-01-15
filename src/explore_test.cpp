@@ -1037,45 +1037,57 @@ String detectIntersection() {
 if(millis() < ignoreIntersectionUntil ){
         return "I";
     }
+    uint16_t reading[6];
+    reading[0]=sensorValues[0];
+    reading[1]=sensorValues[1];
+    reading[2]=sensorValues[2];
+    reading[3]=sensorValues[3];
+    reading[4]=sensorValues[4];
+    reading[5]=sensorValues[5];
   ignoreIntersectionUntil=millis()+2000;
   qtr.readCalibrated(sensorValues);
   int threshold =200; // General threshold adjustment
 
-  bool leftSide = (sensorValues[0] > threshold &&
-                   sensorValues[1] > threshold &&
-                   sensorValues[2] > threshold);
-  bool rightSide = (sensorValues[3] > threshold &&
-                    sensorValues[4] > threshold &&
-                    sensorValues[5] > threshold);
+  bool leftSide = (reading[0] > threshold &&
+                   reading[1] > threshold &&
+                   reading[2] > threshold);
 
-  bool nothing = (sensorValues[0] < threshold &&
-                  sensorValues[1] < threshold &&
-                  sensorValues[2] < threshold &&
-                  sensorValues[3] < threshold &&
-                  sensorValues[4] < threshold &&
-                  sensorValues[5] < threshold);
+  bool rightSide = (reading[3] > threshold &&
+                    reading[4] > threshold &&
+                    reading[5] > threshold);
+
+  bool nothing = (reading[0] < threshold &&
+                  reading[1] < threshold &&
+                  reading[2] < threshold &&
+                  reading[3] < threshold &&
+                  reading[4] < threshold &&
+                  reading[5] < threshold);
   
   // Determine intersection type
   if (leftSide && rightSide) {
-    for( uint16_t val : sensorValues){
+    Serial.println("");
+    for( uint16_t val : reading){
     Serial.print(val);
     Serial.print("  ");
   }
     return "T";  // T or + intersection
   } else if (leftSide) {
-    for( uint16_t val : sensorValues){
+    Serial.println("");
+    for( uint16_t val : reading){
     Serial.print(val);
     Serial.print("  ");
   }
     return "L";  // Left intersection
   } else if (rightSide) {
-    for( uint16_t val : sensorValues){
+    Serial.println("");
+    for( uint16_t val : reading){
     Serial.print(val);
     Serial.print("  ");
   }
     return "R";  // Right intersection
   } else if(nothing){
-    for( uint16_t val : sensorValues){
+    Serial.println("");
+    for( uint16_t val : reading){
     Serial.print(val);
     Serial.print("  ");
   }
