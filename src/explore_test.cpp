@@ -1617,23 +1617,29 @@ newMapKey += mapCount + 1;
 }
 
 void updateTaskNodes() {
+  Serial.println("");
+  Serial.print("z");
   // Ensure targetpath has at least one node
   if (targetpath.empty()) {
     Serial.println("Target path is empty. Nothing to update.");
     return;
   }
-
+Serial.print("x");
   String taskNodesStream;
 
   // Build the task nodes string
   for (size_t i = 0; i < targetpath.size(); ++i) {
+    Serial.print("[");
     if (i > 0) {
+      Serial.print("-");
       // Calculate the cost from the previous node to the current node
       auto previousNode = targetpath[i - 1];
       auto currentNode = targetpath[i];
       int cost;
-      for(int j=0;j<previousNode->ptrs.size();i++){
+      for(int j=0;j<previousNode->ptrs.size();j++){
+        Serial.print(".");
         if(previousNode->ptrs[j]==currentNode){
+          Serial.print(",");
           cost = previousNode->costs[j];
         }
       }
@@ -1652,9 +1658,10 @@ void updateTaskNodes() {
       taskNodesStream +=targetpath[0]->uid;
       taskNodesStream += ",cost:0}";
     }
+    Serial.print("]");
   }
-
-
+Serial.println("");
+Serial.println("firebaseDB update");
 
   if (Firebase.RTDB.setString(&fbdo, "/Robot/task_nodes", taskNodesStream)) {
     Serial.println("Updated task nodes successfully.");
