@@ -245,7 +245,7 @@ void setup()
 
   // ----- CALIBRATION -----
   Serial.println("Calibrating sensors. Move the robot over the line...");
-  for (uint16_t i = 0; i < 100; i++)
+  for (uint16_t i = 0; i < 200; i++)
   {
     qtr.calibrate();
     if (i % 50 == 0) {
@@ -288,6 +288,8 @@ void setup()
 //  mode_set(1);
   cout<<"starting..."<<endl;
   //updateGraphInDatabase("new graph");
+  last_read_tagUID="START_NODE";
+  process_cmd("P");
 }
 // --------------- MAIN LOOP ---------------------------
 void loop()
@@ -1116,7 +1118,7 @@ if(millis() < ignoreIntersectionUntil ){
     }
   ignoreIntersectionUntil=millis()+2000;
   qtr.readCalibrated(sensorValues);
-  int threshold =400; // General threshold adjustment
+  int threshold =200; // General threshold adjustment
 
   bool leftSide = (sensorValues[0] > threshold &&
                    sensorValues[1] > threshold &&
@@ -1131,7 +1133,10 @@ if(millis() < ignoreIntersectionUntil ){
                   sensorValues[3] < threshold &&
                   sensorValues[4] < threshold &&
                   sensorValues[5] < threshold);
-
+  for( uint16_t val : sensorValues){
+    Serial.print(val);
+    Serial.print("  ");
+  }
   // Determine intersection type
   if (leftSide && rightSide) {
     return "T";  // T or + intersection
@@ -1200,14 +1205,46 @@ void process_cmd(String cmd){
   Serial.print("cmd: ");
   Serial.println(cmd);
     if(current_Node_Ptr==nullptr){
-      if(cmd=="P")
+      if (cmd == "P")
       {
-        cmd="S";
+        cmd = "S";
         String UID = createIntersectionID(cmd, true);
-        startNodeName=UID;
-      } 
-      else 
-      { 
+        startNodeName = UID;
+      }
+      else if (cmd == "L")
+      {
+        // Left intersection
+        cout << "Turning LEFT (L intersection)..." << endl;
+
+        turnL();
+      }
+      else if (cmd == "R")
+      {
+        // Right intersection
+        cout << "Turning RIGHT (R intersection)..." << endl;
+
+        turnR();
+      }
+      else if (cmd == "T")
+      {
+        // T or + intersection
+        cout << "T intersection detected" << endl;
+
+        cout << "defaulting LEFT...";
+        turnL();
+      }
+      else if (cmd == "U")
+      {
+        // T or + intersection
+        cout << "U: deadend detected. reversing..." << endl;
+
+        backtrack = true;
+
+        turnL();
+        turnL();
+      }
+      else
+      {
         return;
       }
     }
