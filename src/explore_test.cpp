@@ -17,8 +17,8 @@
 using namespace std;
 
 //-------------------- FIREBASE -----------------------
-#define WIFI_SSID "eduroam31"
-#define WIFI_PASSWORD "sekiztane1"
+#define WIFI_SSID "Deniz"
+#define WIFI_PASSWORD "12345678"
 #define API_KEY "AIzaSyD3BE-hRNRFyzfK1d98scXM5zG5w5iX3fw"
 #define DATABASE_URL "https://ladsceng483-default-rtdb.europe-west1.firebasedatabase.app/"
 
@@ -285,7 +285,7 @@ void setup()
 // --------------- MAIN LOOP ---------------------------
 void loop()
 {
-  switch(mode)
+  /* switch(mode)
   {
     case 0:
       readyForOrder();
@@ -305,7 +305,7 @@ void loop()
 
     case 4:
       goToNode();//go back to start(targetpath given by streamCallback_wait)
-  }
+  } */
   
 }
 
@@ -333,8 +333,8 @@ void reset_robot(){
     current_Node_Ptr=nullptr;
 
     cmd_stack.clear();
-    int direction=0; //0(up) 1(left) 2(down) 3(right)
-    int prevDirection=0;
+    direction=0; //0(up) 1(left) 2(down) 3(right)
+    prevDirection=0;
     targetpath.clear();
     orders.clear();
 
@@ -362,7 +362,7 @@ void mode_set(int a){
   json.set("current_mode", mode);  // Set the 'current_mode' field to the new mode value
   
   // Write the updated mode to the Firebase Realtime Database under the 'robot' node
-  if (Firebase.RTDB.set(&fbdo, "/robot/current_mode", &json)) {
+  if (Firebase.RTDB.setInt(&fbdo, "/Robot/current_mode", mode)) {
     Serial.println("Mode updated in Firebase.");
   } else {
     Serial.printf("Failed to update mode: %s\n", fbdo.errorReason().c_str());
@@ -1411,28 +1411,97 @@ void universalStreamCallback(FirebaseStream data) {
       }
     }
 
-    // Check if "/active_task/delivery_location" changed
-    if (jsonData.get(result, "/active_task/delivery_location")) {
-      if (result.typeNum == FirebaseJson::JSON_STRING) {
-        String newDelivery = result.stringValue;
-        Serial.print("active_task/delivery_location changed: ");
-        Serial.println(newDelivery);
-      }
-    }
-
     // Check if "/active_task/pick_up_location" changed
     if (jsonData.get(result, "/active_task/pick_up_location")) {
       if (result.typeNum == FirebaseJson::JSON_STRING) {
         String newPickup = result.stringValue;
         Serial.print("active_task/pick_up_location changed: ");
         Serial.println(newPickup);
+        orders.push_back(newPickup);
       }
     }
+    // Check if "/active_task/delivery_location" changed
+    if (jsonData.get(result, "/active_task/delivery_location")) {
+      if (result.typeNum == FirebaseJson::JSON_STRING) {
+        String newDelivery = result.stringValue;
+        Serial.print("active_task/delivery_location changed: ");
+        Serial.println(newDelivery);
+        orders.push_back(newDelivery);
+      }
+    }
+
+    
+
+    if (jsonData.get(result, "/Robot/waiting")) {
+      if (result.typeNum == FirebaseJson::JSON_BOOL) {
+        bool waitingValue = result.boolValue;
+        Serial.print("/Robot/waiting changed: ");
+        Serial.println(waitingValue);
+        if (!waitingValue)
+        { // Check if 'waiting' has become false
+
+          if (mode == 3)
+          {
+            if (orders.size() > 0)
+            {
+              targetpath = djikstra(current_Node_Ptr->uid, orders[0]);
+              orders.erase(orders.begin());
+              mode_set(1);
+            }
+            else
+            {
+              targetpath = djikstra(current_Node_Ptr->uid, startNodeName);
+              mode_set(4);
+            }
+          }
+        }
+      } else {
+    Serial.println("Unexpected data type received for 'waiting'.");
+      }
+    }
+
 
     // ...and so on for any other fields you want to check
 
   } else {
     // It's not JSON, maybe it's a boolean or something else
     Serial.printf("Stream data type: %s\n", data.dataType().c_str());
+
+    if (data.dataPath() == "/Map/Map1")
+    {
+      String map1Content = data.stringData();
+      Serial.print("Map/Map1 updated: ");
+      Serial.println(map1Content);
+    }
+    else if (data.dataPath() == "/active_task/delivery_location")
+    {
+      String deliveryLocation = data.stringData();
+      Serial.print("Delivery Location changed to: ");
+      Serial.println(deliveryLocation);
+    }
+    else if (data.dataPath() == "/active_task/pick_up_location")
+    {
+      String pickUpLocation = data.stringData();
+      Serial.print("Pick-Up Location changed to: ");
+      Serial.println(pickUpLocation);
+    }
+    else if (data.dataPath() == "/Robot/current_mode")
+    {
+      int Mod = data.intData();
+      Serial.print("/Robot/current_mode changed to: ");
+      Serial.println(Mod);
+    }
+    else if (data.dataPath() == "/Robot/task_nodes")
+    {
+      String taskData = data.stringData();
+      Serial.print("/Robot/task_nodes changed to: ");
+      Serial.println(taskData);
+    }
+    else if (data.dataPath() == "/Robot/waiting")
+    {
+      bool waitValue = data.boolData();
+      Serial.print("/Robot/waiting changed to: ");
+      Serial.println(waitValue);
+    }
   }
 }
