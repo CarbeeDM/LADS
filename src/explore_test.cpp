@@ -323,6 +323,7 @@ void loop()
 // -----------------------------------------------------
 
 void reset_robot(){
+    Serial.println("Resetting robot");
     backtrack=false;
 
     currentNodeIndex = -1;              // Index of the current node in the graph
