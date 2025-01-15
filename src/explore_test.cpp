@@ -972,7 +972,10 @@ void driveMotors(int leftSpeed, int rightSpeed)
  */
 void handleLineFollow()
 {
-  
+  for( uint16_t val : sensorValues){
+    Serial.print(val);
+    Serial.print("  ");
+  }
   uint16_t position = qtr.readLineBlack(sensorValues);
   int error = position - 2500;  // for 6 sensors
   float proportional = error;
