@@ -95,8 +95,9 @@ std::shared_ptr<Node> wall = std::make_shared<Node>();
 
 vector<shared_ptr<Node>> targetpath;
 
-vector<String> orders;
 
+String pickupFrom;
+String deliverTo;
 /*
   0: Waiting on Start
 	1: Exploration
@@ -336,7 +337,9 @@ void reset_robot(){
     direction=0; //0(up) 1(left) 2(down) 3(right)
     prevDirection=0;
     targetpath.clear();
-    orders.clear();
+    
+    pickupFrom="";
+    deliverTo="";
 
 }
 void mode_set(int a){
@@ -391,14 +394,13 @@ void waitForPickUp(){
 }
 
 void readyForOrder(){
-  //checks if the orders array has been given value by streamCallback_order()
-  if(orders.size()>0){
-  String endName=orders[0];
-
+  //checks if pickupFrom has been given value by streamCallback.
+  if(pickupFrom!=""){
+  String endName=pickupFrom;
   targetpath=djikstra(current_Node_Ptr->uid,endName);
+  pickupFrom="";
   updateTaskNodes();
   mode_set(2);
-  orders.erase(orders.begin());
   return;
   } else {
     return;
@@ -511,20 +513,18 @@ void streamCallback_order(FirebaseStream data) {
 
 if (jsonData.get(result, "pick_up_location") && result.typeNum == FirebaseJson::JSON_STRING) {
       String pickUpLocation = result.stringValue; // Get the pick-up location value as a string
-      orders.push_back(pickUpLocation.c_str());
+      pickupFrom=pickUpLocation;
     }
 
     if (jsonData.get(result, "delivery_location") && result.typeNum == FirebaseJson::JSON_STRING) {
       String deliveryLocation = result.stringValue; // Get the delivery location value as a string
-      orders.push_back(deliveryLocation.c_str());
+      deliverTo=deliveryLocation;
     }
 
-    //orders.clear();
-    // Print the updated orders vector
-    Serial.println("Updated Orders:");
-    for (const auto& order : orders) {
-      Serial.println(order.c_str());
-    }
+    Serial.println("Updated Orders: pickup/deliver");
+
+    Serial.println(pickupFrom);
+    Serial.println(deliverTo);
 
   } else {
     Serial.println("Unexpected data type received.");
@@ -541,17 +541,27 @@ void streamCallback_wait(FirebaseStream data) {
 
     if (!waitingValue) { // Check if 'waiting' has become false
       
-      if(mode==3){
-        if(orders.size()>0){
-          targetpath=djikstra(current_Node_Ptr->uid,orders[0]);
-          orders.erase(orders.begin());
-          mode_set(1);
-        } else{
-          targetpath=djikstra(current_Node_Ptr->uid, startNodeName);
-          mode_set(4);
-        }
-        updateTaskNodes();
-      }else{return;}
+      if (mode == 3)
+          {
+            if (deliverTo!="")
+            {
+              targetpath = djikstra(current_Node_Ptr->uid, deliverTo);
+              deliverTo="";
+              mode_set(1);
+            }
+            else if (pickupFrom!=""){
+              targetpath = djikstra(current_Node_Ptr->uid, pickupFrom);
+              pickupFrom="";
+              mode_set(1);
+            } else
+            {
+              targetpath = djikstra(current_Node_Ptr->uid, startNodeName);
+              mode_set(4);
+            }
+          } else
+          {
+            return;
+          }
     }
   } else {
     Serial.println("Unexpected data type received for 'waiting'.");
@@ -1417,7 +1427,7 @@ void universalStreamCallback(FirebaseStream data) {
         String newPickup = result.stringValue;
         Serial.print("active_task/pick_up_location changed: ");
         Serial.println(newPickup);
-        orders.push_back(newPickup);
+        pickupFrom=newPickup;
       }
     }
     // Check if "/active_task/delivery_location" changed
@@ -1426,7 +1436,7 @@ void universalStreamCallback(FirebaseStream data) {
         String newDelivery = result.stringValue;
         Serial.print("active_task/delivery_location changed: ");
         Serial.println(newDelivery);
-        orders.push_back(newDelivery);
+        deliverTo=newDelivery;
       }
     }
 
@@ -1442,13 +1452,17 @@ void universalStreamCallback(FirebaseStream data) {
 
           if (mode == 3)
           {
-            if (orders.size() > 0)
+            if (deliverTo!="")
             {
-              targetpath = djikstra(current_Node_Ptr->uid, orders[0]);
-              orders.erase(orders.begin());
+              targetpath = djikstra(current_Node_Ptr->uid, deliverTo);
+              deliverTo="";
               mode_set(1);
             }
-            else
+            else if (pickupFrom!=""){
+              targetpath = djikstra(current_Node_Ptr->uid, pickupFrom);
+              pickupFrom="";
+              mode_set(1);
+            } else
             {
               targetpath = djikstra(current_Node_Ptr->uid, startNodeName);
               mode_set(4);
@@ -1478,12 +1492,14 @@ void universalStreamCallback(FirebaseStream data) {
       String deliveryLocation = data.stringData();
       Serial.print("Delivery Location changed to: ");
       Serial.println(deliveryLocation);
+      deliverTo=deliveryLocation;
     }
     else if (data.dataPath() == "/active_task/pick_up_location")
     {
       String pickUpLocation = data.stringData();
       Serial.print("Pick-Up Location changed to: ");
       Serial.println(pickUpLocation);
+      pickupFrom=pickUpLocation;
     }
     else if (data.dataPath() == "/Robot/current_mode")
     {
@@ -1502,6 +1518,25 @@ void universalStreamCallback(FirebaseStream data) {
       bool waitValue = data.boolData();
       Serial.print("/Robot/waiting changed to: ");
       Serial.println(waitValue);
+      if (mode == 3)
+          {
+            Serial.print("Mode=3, exiting waiting state");
+            if (deliverTo!="")
+            {
+              targetpath = djikstra(current_Node_Ptr->uid, deliverTo);
+              deliverTo="";
+              mode_set(1);
+            }
+            else if (pickupFrom!=""){
+              targetpath = djikstra(current_Node_Ptr->uid, pickupFrom);
+              pickupFrom="";
+              mode_set(1);
+            } else
+            {
+              targetpath = djikstra(current_Node_Ptr->uid, startNodeName);
+              mode_set(4);
+            }
+          }
     }
   }
 }
