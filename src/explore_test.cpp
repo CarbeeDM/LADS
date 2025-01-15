@@ -466,9 +466,12 @@ void mode_set_firebase(int a){
       if (pickupFrom != "")
       {
         String endName = pickupFrom;
+        Serial.println(pickupFrom.c_str());
         targetpath = djikstra(current_Node_Ptr->uid, endName);
         pickupFrom = "";
+        Serial.println("djikstrastuffksnflajsnfnajsbf");
         updateTaskNodes();
+        Serial.println("111111111111");
         return;
       }
       else
@@ -792,6 +795,7 @@ Serial.print(neighbor_entry.c_str());Serial.print(">");
                     graph[nodeIndex]->neighbors[dir] = neighbor_name.c_str();
                     graph[nodeIndex]->costs[dir] = cost;
                 }
+                Serial.print("!");
             }
         }
     }
