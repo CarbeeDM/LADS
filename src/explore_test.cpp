@@ -18,8 +18,8 @@
 using namespace std;
 
 //-------------------- FIREBASE -----------------------
-#define WIFI_SSID "Deniz"
-#define WIFI_PASSWORD "12345678"
+#define WIFI_SSID "eduroam31"
+#define WIFI_PASSWORD "sekiztane1"
 #define API_KEY "AIzaSyD3BE-hRNRFyzfK1d98scXM5zG5w5iX3fw"
 #define DATABASE_URL "https://ladsceng483-default-rtdb.europe-west1.firebasedatabase.app/"
 
@@ -494,11 +494,9 @@ mode=a;
 
 void ExplorationPhase(){
   handleLineFollow();
-
-  if(millis() > ignoreIntersectionUntil ){
-        handleIntersectionIfNeeded();
+  handleIntersectionIfNeeded();
         //printFinalGraphState();
-    }
+   
   if(millis()> ignoreRFIDUntil){
         if(checkForRFID()){
           process_cmd("P");
@@ -976,6 +974,7 @@ void handleLineFollow()
     Serial.print(val);
     Serial.print("  ");
   }
+  Serial.println();
   uint16_t position = qtr.readLineBlack(sensorValues);
   int error = position - 2500;  // for 6 sensors
   float proportional = error;
@@ -986,7 +985,7 @@ void handleLineFollow()
   correction = constrain(correction, -maxSpeed, maxSpeed);
 
   // We'll do a simple approach: a "base speed" approach, or direct approach.
-  int minSpeed = 170;
+  int minSpeed = 210;
   int leftMotorSpeed  = maxSpeed + correction;
   int rightMotorSpeed = maxSpeed - correction;
 
@@ -1034,18 +1033,14 @@ bool checkForRFID()
  */
 String detectIntersection() {
 
-if(millis() < ignoreIntersectionUntil ){
-        return "I";
-    }
-    uint16_t reading[6];
-    reading[0]=sensorValues[0];
-    reading[1]=sensorValues[1];
-    reading[2]=sensorValues[2];
-    reading[3]=sensorValues[3];
-    reading[4]=sensorValues[4];
-    reading[5]=sensorValues[5];
-  ignoreIntersectionUntil=millis()+2000;
-  qtr.readCalibrated(sensorValues);
+  uint16_t reading[6];
+  reading[0]=sensorValues[0];
+  reading[1]=sensorValues[1];
+  reading[2]=sensorValues[2];
+  reading[3]=sensorValues[3];
+  reading[4]=sensorValues[4];
+  reading[5]=sensorValues[5];
+
   int threshold =200; // General threshold adjustment
 
   bool leftSide = (reading[0] > threshold &&
@@ -1120,9 +1115,12 @@ String createIntersectionID(String type, bool rfid)
  *  Only for exploration phase
  */
 bool handleIntersectionIfNeeded() {
-    
+    String type = "I";
+    if(millis() < ignoreIntersectionUntil ){
+        return "I";
+    }
     // Determine intersection type
-    String type = detectIntersection();
+    type = detectIntersection();
     if(type=="I"){return false;}
     Serial.print("CORNER HERE, TYPE: ");
     Serial.println(type);
@@ -1134,22 +1132,42 @@ bool handleIntersectionIfNeeded() {
 void turnL(){direction++;direction=(direction+4)%4;
       driveMotors(0, 0);  // stop
       delay(200);
-      driveMotors(-255, -255);  // go back
-      delay(200);
+      driveMotors(255, 255);  // stop
+      delay(300);
       driveMotors(-255, 255);  // Pivot left
-      delay(500);
-      Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
-      Serial.println("turning Left");
+      int threshold = 400;  // Adjust threshold as needed
+      while (true) {
+          qtr.readCalibrated(sensorValues);  // Update sensor values
+          for (uint16_t val : sensorValues) {
+              if (val > threshold) {
+                  driveMotors(0, 0);  // Stop turning
+                  Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
+                  Serial.println("Turning Left complete the value was");
+                  Serial.println(val);
+                  return;
+              }
+          }
+      }
       }
 void turnR(){direction--;direction=(direction+4)%4;
       driveMotors(0, 0);  // stop
       delay(200);
-      driveMotors(-255, -255);  // go back
-      delay(200);
+      driveMotors(255, 255);  // stop
+      delay(300);
       driveMotors(255, -255);  // Pivot left
-      delay(500);
-      Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
-      Serial.println("turning Right");
+      int threshold = 400;  // Adjust threshold as needed
+      while (true) {
+          qtr.readCalibrated(sensorValues);  // Update sensor values
+          for (uint16_t val : sensorValues) {
+              if (val > threshold) {
+                  driveMotors(0, 0);  // Stop turning
+                  Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
+                  Serial.println("Turning right complete, the value was:");
+                  Serial.println(val);
+                  return;
+              }
+          }
+      }
       }
 
 /**
