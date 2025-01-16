@@ -285,7 +285,7 @@ void setup()
 
   segmentStartTime = millis(); // start measuring travel time from the initial node
   ignoreIntersectionUntil=millis();
-//  mode_set(1);
+mode_set(0);
   cout<<"starting..."<<endl;
   //updateGraphInDatabase("new graph");
   last_read_tagUID="START_NODE";
@@ -1131,6 +1131,7 @@ bool handleIntersectionIfNeeded() {
     }
     Serial.print("CORNER HERE, TYPE: ");
     Serial.println(type);
+    last_read_tagUID="";
     process_cmd(type);
     Serial.println();
     Serial.println("---------");
