@@ -976,6 +976,7 @@ void handleLineFollow()
     Serial.print(val);
     Serial.print("  ");
   }
+  Serial.println();
   uint16_t position = qtr.readLineBlack(sensorValues);
   int error = position - 2500;  // for 6 sensors
   float proportional = error;
