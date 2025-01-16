@@ -1118,7 +1118,7 @@ bool handleIntersectionIfNeeded() {
     Serial.print("CORNER HERE, TYPE: ");
     Serial.println(type);
     process_cmd(type);
-
+  ignoreIntersectionUntil= millis()+2000;
     return true;
 }
 
