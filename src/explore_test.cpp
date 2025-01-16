@@ -18,8 +18,8 @@
 using namespace std;
 
 //-------------------- FIREBASE -----------------------
-#define WIFI_SSID "eduroam31"
-#define WIFI_PASSWORD "sekiztane1"
+#define WIFI_SSID "Deniz"
+#define WIFI_PASSWORD "12345678"
 #define API_KEY "AIzaSyD3BE-hRNRFyzfK1d98scXM5zG5w5iX3fw"
 #define DATABASE_URL "https://ladsceng483-default-rtdb.europe-west1.firebasedatabase.app/"
 
@@ -285,7 +285,7 @@ void setup()
 
   segmentStartTime = millis(); // start measuring travel time from the initial node
   ignoreIntersectionUntil=millis();
-mode_set(0);
+//  mode_set(1);
   cout<<"starting..."<<endl;
   //updateGraphInDatabase("new graph");
   last_read_tagUID="START_NODE";
@@ -494,9 +494,11 @@ mode=a;
 
 void ExplorationPhase(){
   handleLineFollow();
-  handleIntersectionIfNeeded();
+
+  if(millis() > ignoreIntersectionUntil ){
+        handleIntersectionIfNeeded();
         //printFinalGraphState();
-   
+    }
   if(millis()> ignoreRFIDUntil){
         if(checkForRFID()){
           process_cmd("P");
@@ -970,8 +972,10 @@ void driveMotors(int leftSpeed, int rightSpeed)
  */
 void handleLineFollow()
 {
-  
-
+  for( uint16_t val : sensorValues){
+    Serial.print(val);
+    Serial.print("  ");
+  }
   uint16_t position = qtr.readLineBlack(sensorValues);
   int error = position - 2500;  // for 6 sensors
   float proportional = error;
@@ -982,7 +986,7 @@ void handleLineFollow()
   correction = constrain(correction, -maxSpeed, maxSpeed);
 
   // We'll do a simple approach: a "base speed" approach, or direct approach.
-  int minSpeed = 210;
+  int minSpeed = 170;
   int leftMotorSpeed  = maxSpeed + correction;
   int rightMotorSpeed = maxSpeed - correction;
 
@@ -1004,10 +1008,9 @@ void handleLineFollow()
 bool checkForRFID()
 {
   if (rfid.PICC_IsNewCardPresent() || ignoreRFIDUntil < millis()) {
-    
+    ignoreRFIDUntil = millis() + 2000;
     if (rfid.PICC_ReadCardSerial()) {
       // Build the UID String
-      ignoreRFIDUntil = millis() + 2000;
       last_read_tagUID = "";
       for (int i = 0; i < rfid.uid.size; i++) {
         last_read_tagUID += String(rfid.uid.uidByte[i], HEX);
@@ -1031,51 +1034,61 @@ bool checkForRFID()
  */
 String detectIntersection() {
 
-  int thresholdLeft = qtr.calibrationOn.minimum[0] + 300;  // Threshold for left sensors
-  int thresholdRight = qtr.calibrationOn.minimum[5] + 300; // Threshold for right sensors
+if(millis() < ignoreIntersectionUntil ){
+        return "I";
+    }
 
-  // Check left side (sensors [0, 1, 2])
-  bool leftSide = (sensorValues[0] > thresholdLeft &&
-                   sensorValues[1] > thresholdLeft &&
-                   sensorValues[2] > thresholdLeft);
+    uint16_t reading[6];
+    reading[0]=sensorValues[0];
+    reading[1]=sensorValues[1];
+    reading[2]=sensorValues[2];
+    reading[3]=sensorValues[3];
+    reading[4]=sensorValues[4];
+    reading[5]=sensorValues[5];
+    Serial.println();
+  qtr.readCalibrated(sensorValues);
+  int threshold =200; // General threshold adjustment
 
-  // Check right side (sensors [3, 4, 5])
-  bool rightSide = (sensorValues[3] > thresholdRight &&
-                    sensorValues[4] > thresholdRight &&
-                    sensorValues[5] > thresholdRight);
+  bool leftSide = (reading[0] > threshold &&
+                   reading[1] > threshold &&
+                   reading[2] > threshold);
 
-  bool nothing = (sensorValues[0] < thresholdLeft &&
-                  sensorValues[1] < thresholdLeft &&
-                  sensorValues[2] < thresholdLeft &&
-                  sensorValues[3] < thresholdRight &&
-                  sensorValues[4] < thresholdRight &&
-                  sensorValues[5] < thresholdRight);
+  bool rightSide = (reading[3] > threshold &&
+                    reading[4] > threshold &&
+                    reading[5] > threshold);
+
+  bool nothing = (reading[0] < threshold &&
+                  reading[1] < threshold &&
+                  reading[2] < threshold &&
+                  reading[3] < threshold &&
+                  reading[4] < threshold &&
+                  reading[5] < threshold);
   
   // Determine intersection type
   if (leftSide && rightSide) {
     Serial.println("");
-    for( uint16_t val : sensorValues){
+    for( uint16_t val : reading){
     Serial.print(val);
     Serial.print("  ");
   }
     return "T";  // T or + intersection
   } else if (leftSide) {
     Serial.println("");
-    for( uint16_t val : sensorValues){
+    for( uint16_t val : reading){
     Serial.print(val);
     Serial.print("  ");
   }
     return "L";  // Left intersection
   } else if (rightSide) {
     Serial.println("");
-    for( uint16_t val : sensorValues){
+    for( uint16_t val : reading){
     Serial.print(val);
     Serial.print("  ");
   }
     return "R";  // Right intersection
   } else if(nothing){
     Serial.println("");
-    for( uint16_t val : sensorValues){
+    for( uint16_t val : reading){
     Serial.print(val);
     Serial.print("  ");
   }
@@ -1108,59 +1121,36 @@ String createIntersectionID(String type, bool rfid)
  *  Only for exploration phase
  */
 bool handleIntersectionIfNeeded() {
-    String type = "I";
-    if(millis() < ignoreIntersectionUntil ){
-        return "I";
-    }
+    
     // Determine intersection type
-    type = detectIntersection();
+    String type = detectIntersection();
     if(type=="I"){return false;}
     Serial.print("CORNER HERE, TYPE: ");
     Serial.println(type);
     process_cmd(type);
-  ignoreIntersectionUntil= millis()+2000;
+ignoreIntersectionUntil= millis()+2000;
     return true;
 }
 
 void turnL(){direction++;direction=(direction+4)%4;
       driveMotors(0, 0);  // stop
       delay(200);
-      driveMotors(255, 255);  // stop
-      delay(300);
+      driveMotors(-255, -255);  // go back
+      delay(200);
       driveMotors(-255, 255);  // Pivot left
-      int threshold = 400;  // Adjust threshold as needed
-      while (true) {
-          qtr.readCalibrated(sensorValues);  // Update sensor values
-          for (uint16_t val : sensorValues) {
-              if (val > threshold) {
-                  driveMotors(0, 0);  // Stop turning
-                  Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
-                  Serial.println("Turning Left complete the value was");
-                  Serial.println(val);
-                  return;
-              }
-          }
-      }
+      delay(500);
+      Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
+      Serial.println("turning Left");
       }
 void turnR(){direction--;direction=(direction+4)%4;
       driveMotors(0, 0);  // stop
       delay(200);
-      driveMotors(255, 255);  // stop
-      delay(300);
+      driveMotors(-255, -255);  // go back
+      delay(200);
       driveMotors(255, -255);  // Pivot left
-      int threshold = 400;  // Adjust threshold as needed
-      while (true) {
-          qtr.readCalibrated(sensorValues);  // Update sensor values
-          for (uint16_t val : sensorValues) {
-              if (val > threshold) {
-                  driveMotors(0, 0);  // Stop turning
-                  Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
-                  Serial.println("Turning right complete, the value was:");
-                  Serial.println(val);
-                  return;
-              }
-          }
-      }
+      delay(500);
+      Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
+      Serial.println("turning Right");
       }
 
 /**
