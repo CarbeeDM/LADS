@@ -1146,22 +1146,76 @@ bool handleIntersectionIfNeeded() {
 void turnL(){direction++;direction=(direction+4)%4;
       driveMotors(0, 0);  // stop
       delay(200);
-      driveMotors(-255, -255);  // go back
-      delay(100);
-      driveMotors(-255, 255);  // Pivot left
+      driveMotors(255, 255);  // stop
       delay(500);
-      Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
-      Serial.println("turning Left");
+      driveMotors(-255, 255);  // Pivot left
+      int threshold = 400;  // Adjust threshold as needed
+      bool flag=true;
+      while (flag) {
+        flag=false;
+        for(int i=0;i<6;i++){
+          qtr.readCalibrated(sensorValues);
+        }
+        qtr.readCalibrated(sensorValues);
+          for (uint16_t val : sensorValues) {
+            Serial.print(val);
+            Serial.print("  ");
+              if (val > threshold) {
+                  flag=true;
+              }
+          }
+          Serial.println();
+      }
+      Serial.println("The robot has left the line, it has to find it again.");
+      while (true) {
+        qtr.readCalibrated(sensorValues);
+        for (uint16_t val : sensorValues) {
+            if (val > threshold) {
+                driveMotors(0, 0);  // Stop turning
+                Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
+                Serial.println("Turning Left complete the value was");
+                Serial.println(val);
+                return;
+            }
+        }
+      }
       }
 void turnR(){direction--;direction=(direction+4)%4;
       driveMotors(0, 0);  // stop
       delay(200);
-      driveMotors(-255, -255);  // go back
-      delay(100);
-      driveMotors(255, -255);  // Pivot left
+      driveMotors(255, 255);  // stop
       delay(500);
-      Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
-      Serial.println("turning Right");
+      driveMotors(255, -255);  // Pivot left
+      int threshold = 400;  // Adjust threshold as needed
+      bool flag=true;
+      while (flag) {
+        flag=false;
+        for(int i=0;i<6;i++){
+          qtr.readCalibrated(sensorValues);
+        }
+        qtr.readCalibrated(sensorValues);
+          for (uint16_t val : sensorValues) {
+            Serial.print(val);
+            Serial.print("  ");
+              if (val > threshold) {
+                  flag=true;
+              }
+          }
+          Serial.println();
+      }
+      Serial.println("The robot has left the line, it has to find it again.");
+      while (true) {
+        qtr.readCalibrated(sensorValues);
+          for (uint16_t val : sensorValues) {
+              if (val > threshold) {
+                  driveMotors(0, 0);  // Stop turning
+                  Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
+                  Serial.println("Turning right complete, the value was:");
+                  Serial.println(val);
+                  return;
+              }
+          }
+      }
       }
 
 /**
