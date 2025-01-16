@@ -1124,11 +1124,21 @@ bool handleIntersectionIfNeeded() {
     
     // Determine intersection type
     String type = detectIntersection();
-    if(type=="I"){return false;}
+    if (type == "I")
+    {
+      return false;
+    }
     Serial.print("CORNER HERE, TYPE: ");
     Serial.println(type);
     process_cmd(type);
-ignoreIntersectionUntil= millis()+2000;
+    Serial.println();
+    Serial.println("---------");
+    Serial.print(ignoreIntersectionUntil + " - ");
+    Serial.print(millis() + " - ");
+
+    ignoreIntersectionUntil = millis() + 2000;
+    Serial.println(ignoreIntersectionUntil);
+        Serial.println("---------");
     return true;
 }
 
@@ -1136,7 +1146,7 @@ void turnL(){direction++;direction=(direction+4)%4;
       driveMotors(0, 0);  // stop
       delay(200);
       driveMotors(-255, -255);  // go back
-      delay(200);
+      delay(100);
       driveMotors(-255, 255);  // Pivot left
       delay(500);
       Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
@@ -1146,7 +1156,7 @@ void turnR(){direction--;direction=(direction+4)%4;
       driveMotors(0, 0);  // stop
       delay(200);
       driveMotors(-255, -255);  // go back
-      delay(200);
+      delay(100);
       driveMotors(255, -255);  // Pivot left
       delay(500);
       Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
