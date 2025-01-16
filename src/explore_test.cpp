@@ -925,14 +925,8 @@ digitalWrite(trigPin, LOW);
   
   // Calculate the distance
   float distanceCm = duration * SOUND_SPEED/2;
-  Serial.print(distanceCm);
   bool flag = (distanceCm < 10.0 && distanceCm > 2.0);
-  if(flag){
-    Serial.println("Flag is true");
-  }
-
-
-return flag;
+  return flag;
 }
 
 /**
@@ -941,37 +935,44 @@ return flag;
 void driveMotors(int leftSpeed, int rightSpeed)
 {
   static bool lastBlockedStatus = false;       // Tracks the last obstacle status
-    static unsigned long lastStatusChangeTime = 0; // Time of the last status change
-    const unsigned long debounceDelay = 200;    // Minimum time in ms to confirm a status change
+  static int falseCount = 0;                   // Counter for consecutive false readings
 
-    bool currentBlockedStatus = obstacleDetection(); // Check for obstacle
+  bool currentBlockedStatus = obstacleDetection(); // Check for obstacle
 
-    // Check if the status has changed and the change persists for debounceDelay
-    if (currentBlockedStatus != lastBlockedStatus) {
-        if (millis() - lastStatusChangeTime > debounceDelay) {
-            // Update Firebase only after the status has been stable for debounceDelay
-            if (Firebase.RTDB.setBool(&fbdo, "/Robot/isBlocked", currentBlockedStatus)) {
-                Serial.printf("Updated isBlocked to %s\n", currentBlockedStatus ? "true" : "false");
-            } else {
-                Serial.printf("Failed to update isBlocked: %s\n", fbdo.errorReason().c_str());
-            }
-
-            // Update the last known status and reset the debounce timer
-            lastBlockedStatus = currentBlockedStatus;
-            lastStatusChangeTime = millis();
-        }
-    } else {
-        // Reset the debounce timer if the status matches
-        lastStatusChangeTime = millis();
-    }
-
-    // If blocked, stop the motors
+  // Check if the status has changed
+  if (currentBlockedStatus != lastBlockedStatus) {
     if (currentBlockedStatus) {
-        Serial.println("Obstacle detected, stopping motors");
-        ledcWrite(pwmChannel1, 0);
-        ledcWrite(pwmChannel2, 0);
-        return;
+      // If blocked, immediately update Firebase
+      if (Firebase.RTDB.setBool(&fbdo, "/Robot/isBlocked", true)) {
+        Serial.println("Streaming isBlocked: true");
+      } else {
+        Serial.printf("Failed to stream isBlocked: %s\n", fbdo.errorReason().c_str());
+      }
+      lastBlockedStatus = true;
+      falseCount = 0; // Reset false count
+    } else {
+      // Increment false count if no obstacle
+      falseCount++;
+      if (falseCount >= 10) {
+        // Update Firebase only after 10 consecutive false readings
+        if (Firebase.RTDB.setBool(&fbdo, "/Robot/isBlocked", false)) {
+          Serial.println("Streaming isBlocked: false");
+        } else {
+          Serial.printf("Failed to stream isBlocked: %s\n", fbdo.errorReason().c_str());
+        }
+        lastBlockedStatus = false;
+        falseCount = 0; // Reset false count
+      }
     }
+  }
+
+  // If blocked, stop the motors
+  if (currentBlockedStatus) {
+    Serial.println("Obstacle detected, stopping motors");
+    ledcWrite(pwmChannel1, 0);
+    ledcWrite(pwmChannel2, 0);
+    return;
+  }
 
   // Left motor
   if (leftSpeed >= 0) {
@@ -1166,8 +1167,8 @@ void turnL(){direction++;direction=(direction+4)%4;
       driveMotors(0, 0);  // stop
       delay(200);
       driveMotors(255, 255);  // stop
-      delay(400);
-      driveMotors(-235, 235);  // Pivot left
+      delay(300);
+      driveMotors(-220, 220);  // Pivot left
       int threshold = 400;  // Adjust threshold as needed
       bool flag=true;
       Serial.println("Trying to left the line totally.");
@@ -1207,8 +1208,8 @@ void turnR(){direction--;direction=(direction+4)%4;
       driveMotors(0, 0);  // stop
       delay(200);
       driveMotors(255, 255);  // stop
-      delay(400);
-      driveMotors(235, -235);  // Pivot left
+      delay(300);
+      driveMotors(220, -220);  // Pivot left
       int threshold = 400;  // Adjust threshold as needed
       bool flag=true;
       Serial.println("Trying to left the line totally.");
