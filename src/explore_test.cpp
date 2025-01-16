@@ -1301,6 +1301,7 @@ void process_cmd(String cmd){
       cout<<"first cmd handle - ";
       if (cmd == "P")
       {
+        Serial.println("first tag is converted to the start node");
         cmd = "S";
         String UID = createIntersectionID(cmd, true);
         startNodeName = UID;
@@ -1343,8 +1344,9 @@ void process_cmd(String cmd){
       }
     return;
     }
-    else if(last_read_tagUID==startNodeName)
+    else if( cmd=="P" && last_read_tagUID==startNodeName)
     {
+      Serial.println("this is the name of the first tag we have seen, cmd converted to S");
         cmd="S";
     }
 
