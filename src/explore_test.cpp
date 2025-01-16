@@ -18,8 +18,8 @@
 using namespace std;
 
 //-------------------- FIREBASE -----------------------
-#define WIFI_SSID "Deniz"
-#define WIFI_PASSWORD "12345678"
+#define WIFI_SSID "eduroam31"
+#define WIFI_PASSWORD "sekiztane1"
 #define API_KEY "AIzaSyD3BE-hRNRFyzfK1d98scXM5zG5w5iX3fw"
 #define DATABASE_URL "https://ladsceng483-default-rtdb.europe-west1.firebasedatabase.app/"
 
@@ -117,7 +117,6 @@ int startNodeIndex = -1;                // Index of the start node in the graph
 int intersectionCounter = 0;            // Generate unique intersection IDs
 unsigned long segmentStartTime = 0;     // measure travel time between nodes
 unsigned long ignoreRFIDUntil = 0;      // ignore RFID reads until this time
-unsigned long ignoreIntersectionUntil = 0;
 String last_read_tagUID = "";
 
 String startNodeName = "";
@@ -141,6 +140,7 @@ void updateTaskNodes();
 void rstVars();
 void turnL();
 void turnR();
+void turnU();
 void merge_two_nodes(shared_ptr<Node> trueNode,shared_ptr<Node> oldNode);
 void link_via_direction(shared_ptr<Node> n, unsigned long cost);
 void process_cmd(String cmd);
@@ -284,7 +284,6 @@ void setup()
   delay(1000);
 
   segmentStartTime = millis(); // start measuring travel time from the initial node
-  ignoreIntersectionUntil=millis();
 mode_set(0);
   cout<<"starting..."<<endl;
   //updateGraphInDatabase("new graph");
@@ -333,7 +332,6 @@ void reset_robot(){
     intersectionCounter = 0;            // Generate unique intersection IDs
     segmentStartTime = millis();     // measure travel time between nodes
     ignoreRFIDUntil = millis();      // ignore RFID reads until this time
-    ignoreIntersectionUntil = millis();
     last_read_tagUID = "";
 
     startNodeName="";
@@ -495,10 +493,9 @@ mode=a;
 void ExplorationPhase(){
   handleLineFollow();
 
-  if(millis() > ignoreIntersectionUntil ){
-        handleIntersectionIfNeeded();
-        //printFinalGraphState();
-    }
+  handleIntersectionIfNeeded();
+
+
   if(millis()> ignoreRFIDUntil){
         if(checkForRFID()){
           process_cmd("P");
@@ -573,8 +570,7 @@ void goToNode(){
               case 2:
               case -2:
                 cout<<"turned backwards"<<endl;
-                turnL();
-                turnL();
+                turnU();
               break;
               case 1: 
               case -3:
@@ -844,7 +840,6 @@ void streamTimeoutCallback(bool timeout) {
  * @brief set ignore vars to 0
  */
 void rstVars(){
-  ignoreIntersectionUntil=0;
   ignoreRFIDUntil=0;
 }
 
@@ -930,8 +925,14 @@ digitalWrite(trigPin, LOW);
   
   // Calculate the distance
   float distanceCm = duration * SOUND_SPEED/2;
+  Serial.print(distanceCm);
+  bool flag = (distanceCm < 10.0 && distanceCm > 2.0);
+  if(flag){
+    Serial.println("Flag is true");
+  }
 
-return distanceCm<10.0;
+
+return flag;
 }
 
 /**
@@ -939,12 +940,38 @@ return distanceCm<10.0;
  */
 void driveMotors(int leftSpeed, int rightSpeed)
 {
+  static bool lastBlockedStatus = false;       // Tracks the last obstacle status
+    static unsigned long lastStatusChangeTime = 0; // Time of the last status change
+    const unsigned long debounceDelay = 200;    // Minimum time in ms to confirm a status change
 
-  if(obstacleDetection()){
-    ledcWrite(pwmChannel1, 0);
-    ledcWrite(pwmChannel2, 0);
-    return;
-  }
+    bool currentBlockedStatus = obstacleDetection(); // Check for obstacle
+
+    // Check if the status has changed and the change persists for debounceDelay
+    if (currentBlockedStatus != lastBlockedStatus) {
+        if (millis() - lastStatusChangeTime > debounceDelay) {
+            // Update Firebase only after the status has been stable for debounceDelay
+            if (Firebase.RTDB.setBool(&fbdo, "/Robot/isBlocked", currentBlockedStatus)) {
+                Serial.printf("Updated isBlocked to %s\n", currentBlockedStatus ? "true" : "false");
+            } else {
+                Serial.printf("Failed to update isBlocked: %s\n", fbdo.errorReason().c_str());
+            }
+
+            // Update the last known status and reset the debounce timer
+            lastBlockedStatus = currentBlockedStatus;
+            lastStatusChangeTime = millis();
+        }
+    } else {
+        // Reset the debounce timer if the status matches
+        lastStatusChangeTime = millis();
+    }
+
+    // If blocked, stop the motors
+    if (currentBlockedStatus) {
+        Serial.println("Obstacle detected, stopping motors");
+        ledcWrite(pwmChannel1, 0);
+        ledcWrite(pwmChannel2, 0);
+        return;
+    }
 
   // Left motor
   if (leftSpeed >= 0) {
@@ -1035,21 +1062,17 @@ bool checkForRFID()
 /**
  * @brief returns a T, L, R, or U based on intersection.
  * Returns I if no intersection.
- * Updates ignoreIntersectionUntil
  */
 String detectIntersection() {
 
-if(millis() < ignoreIntersectionUntil ){
-        return "I";
-    }
 
-    uint16_t reading[6];
-    reading[0]=sensorValues[0];
-    reading[1]=sensorValues[1];
-    reading[2]=sensorValues[2];
-    reading[3]=sensorValues[3];
-    reading[4]=sensorValues[4];
-    reading[5]=sensorValues[5];
+  uint16_t reading[6];
+  reading[0]=sensorValues[0];
+  reading[1]=sensorValues[1];
+  reading[2]=sensorValues[2];
+  reading[3]=sensorValues[3];
+  reading[4]=sensorValues[4];
+  reading[5]=sensorValues[5];
   qtr.readCalibrated(sensorValues);
   int threshold =200; // General threshold adjustment
 
@@ -1136,14 +1159,6 @@ bool handleIntersectionIfNeeded() {
     Serial.println(type);
     last_read_tagUID="";
     process_cmd(type);
-    Serial.println();
-    Serial.println("---------");
-    Serial.print(ignoreIntersectionUntil + " - ");
-    Serial.print(millis() + " - ");
-
-    ignoreIntersectionUntil = millis() + 2000;
-    Serial.println(ignoreIntersectionUntil);
-        Serial.println("---------");
     return true;
 }
 
@@ -1175,6 +1190,8 @@ void turnL(){direction++;direction=(direction+4)%4;
       while (true) {
         qtr.readCalibrated(sensorValues);
         for (uint16_t val : sensorValues) {
+          Serial.print(val);
+          Serial.print("  ");
             if (val > threshold) {
                 driveMotors(0, 0);  // Stop turning
                 Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
@@ -1183,6 +1200,7 @@ void turnL(){direction++;direction=(direction+4)%4;
                 return;
             }
         }
+        Serial.println();
       }
       }
 void turnR(){direction--;direction=(direction+4)%4;
@@ -1213,6 +1231,8 @@ void turnR(){direction--;direction=(direction+4)%4;
       while (true) {
         qtr.readCalibrated(sensorValues);
           for (uint16_t val : sensorValues) {
+            Serial.print(val);
+            Serial.print("  ");
               if (val > threshold) {
                   driveMotors(0, 0);  // Stop turning
                   Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
@@ -1221,8 +1241,55 @@ void turnR(){direction--;direction=(direction+4)%4;
                   return;
               }
           }
+          Serial.println();
       }
       }
+      void turnU() {
+        direction += 2; // Update direction for a U-turn
+        direction = (direction + 4) % 4; // Ensure direction stays within 0-3
+
+        driveMotors(0, 0);  // Stop motors
+        delay(200);
+
+        driveMotors(-255, -255);  // Move backward slightly to create space
+        delay(400);
+
+        driveMotors(-235, 235);  // Pivot to start U-turn
+        int threshold = 400;  // Adjust threshold as needed for line detection
+        bool flag = true;
+
+        Serial.println("Starting U-turn: leaving the line.");
+
+        // Ensure the robot completely leaves the line
+        while (flag) {
+            flag = false;
+            qtr.readCalibrated(sensorValues);
+            for (uint16_t val : sensorValues) {
+                Serial.print(val);
+                Serial.print("  ");
+                if (val > threshold) {
+                    flag = true; // Still on the line, keep turning
+                }
+            }
+            Serial.println();
+        }
+
+        Serial.println("Line left; robot will now search for it again.");
+
+        // Rotate until the line is detected again
+        while (true) {
+            qtr.readCalibrated(sensorValues);
+            for (uint16_t val : sensorValues) {
+                if (val > threshold) {
+                    driveMotors(0, 0);  // Stop motors upon finding the line
+                    Firebase.RTDB.setInt(&fbdo, "/Robot/direction", direction);
+                    Serial.println("U-turn complete, line found.");
+                    return;
+                }
+            }
+        }
+    }
+
 
 /**
  * @brief Add a new node or do backtracking. S for startNode.
@@ -1267,8 +1334,8 @@ void process_cmd(String cmd){
 
         backtrack = true;
 
-        turnL();
-        turnL();
+        turnU();
+      
       }
       else
       {
@@ -1329,19 +1396,19 @@ Firebase.RTDB.setString(&fbdo, "/Robot/current_node", current_Node_Ptr->uid);
   if(backtrack==false){
     if (cmd == "L") {
       // Left intersection
-      cout<< "Turning LEFT (L intersection)..." << endl;
+      cout<< "Turning LEFT (L intersection) backtrace..." << endl;
       mflag= (direction+1)%4;
       mask = mask | 1 << mflag;
       turnL();
     } else if (cmd == "R") {
       // Right intersection
-      cout<< "Turning RIGHT (R intersection)" << endl;
+      cout<< "Turning RIGHT (R intersection) backtrace" << endl;
       mflag= (direction+3)%4;
       mask = mask | 1 << mflag;
       turnR();
     } else if (cmd == "T") {
       // T or + intersection
-      cout<< "T intersection detected" << endl;
+      cout<< "T intersection detected backtrace" << endl;
       mflag= (direction+1)%4;
       mask = mask | 1 << mflag;
       mflag= (direction+3)%4;
@@ -1354,8 +1421,7 @@ Firebase.RTDB.setString(&fbdo, "/Robot/current_node", current_Node_Ptr->uid);
 
       backtrack=true;
 
-      turnL();
-      turnL();
+      turnU();
     } else if (cmd == "P") {
       cout<< "RFID tag detected, continuing forward" << endl;
     } else {
