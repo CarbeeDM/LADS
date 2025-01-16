@@ -530,7 +530,7 @@ void readyForOrder(){
 }
 
 void goToNode(){
-
+  Serial.println("going to node");
     handleLineFollow();
       if(checkForRFID() && detectIntersection()!="I"){
         cout<<"I was at: "<< current_Node_Ptr->uid<<endl;
@@ -972,11 +972,15 @@ void driveMotors(int leftSpeed, int rightSpeed)
  */
 void handleLineFollow()
 {
-  for( uint16_t val : sensorValues){
-    Serial.print(val);
-    Serial.print("  ");
+  static int printCounter = 0;
+  if (printCounter % 5 == 0) {
+    for (uint16_t val : sensorValues) {
+      Serial.print(val);
+      Serial.print("  ");
+    }
+    Serial.println();
   }
-  Serial.println();
+  printCounter++;
   uint16_t position = qtr.readLineBlack(sensorValues);
   int error = position - 2500;  // for 6 sensors
   float proportional = error;
@@ -1046,7 +1050,6 @@ if(millis() < ignoreIntersectionUntil ){
     reading[3]=sensorValues[3];
     reading[4]=sensorValues[4];
     reading[5]=sensorValues[5];
-    Serial.println();
   qtr.readCalibrated(sensorValues);
   int threshold =200; // General threshold adjustment
 
@@ -1148,10 +1151,11 @@ void turnL(){direction++;direction=(direction+4)%4;
       driveMotors(0, 0);  // stop
       delay(200);
       driveMotors(255, 255);  // stop
-      delay(500);
-      driveMotors(-255, 255);  // Pivot left
+      delay(400);
+      driveMotors(-235, 235);  // Pivot left
       int threshold = 400;  // Adjust threshold as needed
       bool flag=true;
+      Serial.println("Trying to left the line totally.");
       while (flag) {
         flag=false;
         for(int i=0;i<6;i++){
@@ -1185,10 +1189,11 @@ void turnR(){direction--;direction=(direction+4)%4;
       driveMotors(0, 0);  // stop
       delay(200);
       driveMotors(255, 255);  // stop
-      delay(500);
-      driveMotors(255, -255);  // Pivot left
+      delay(400);
+      driveMotors(235, -235);  // Pivot left
       int threshold = 400;  // Adjust threshold as needed
       bool flag=true;
+      Serial.println("Trying to left the line totally.");
       while (flag) {
         flag=false;
         for(int i=0;i<6;i++){
@@ -1235,16 +1240,16 @@ void process_cmd(String cmd){
       else if (cmd == "L")
       {
         // Left intersection
-        cout << "Turning LEFT (L intersection)..." << endl;
+        cout << "Turning LEFT (L intersection) shouldn't print..." << endl;
 
-        turnL();
+        //turnL();
       }
       else if (cmd == "R")
       {
         // Right intersection
-        cout << "Turning RIGHT (R intersection)..." << endl;
+        cout << "Turning RIGHT (R intersection) shouldn't print..." << endl;
 
-        turnR();
+        //turnR();
       }
       else if (cmd == "T")
       {
@@ -1328,7 +1333,7 @@ Firebase.RTDB.setString(&fbdo, "/Robot/current_node", current_Node_Ptr->uid);
       turnL();
     } else if (cmd == "R") {
       // Right intersection
-      cout<< "Turning RIGHT (R intersection)..." << endl;
+      cout<< "Turning RIGHT (R intersection) backtrace false..." << endl;
       mflag= (direction+3)%4;
       mask = mask | 1 << mflag;
       turnR();
