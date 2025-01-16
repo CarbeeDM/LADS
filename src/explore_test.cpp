@@ -1231,6 +1231,7 @@ void process_cmd(String cmd){
   Serial.print("cmd: ");
   Serial.println(cmd);
     if(current_Node_Ptr==nullptr){
+      cout<<"first cmd handle - ";
       if (cmd == "P")
       {
         cmd = "S";
@@ -1240,16 +1241,16 @@ void process_cmd(String cmd){
       else if (cmd == "L")
       {
         // Left intersection
-        cout << "Turning LEFT (L intersection) shouldn't print..." << endl;
+        cout << "Turning LEFT (L intersection)" << endl;
 
-        //turnL();
+        turnL();
       }
       else if (cmd == "R")
       {
         // Right intersection
-        cout << "Turning RIGHT (R intersection) shouldn't print..." << endl;
+        cout << "Turning RIGHT (R intersection)" << endl;
 
-        //turnR();
+        turnR();
       }
       else if (cmd == "T")
       {
@@ -1334,7 +1335,7 @@ Firebase.RTDB.setString(&fbdo, "/Robot/current_node", current_Node_Ptr->uid);
       turnL();
     } else if (cmd == "R") {
       // Right intersection
-      cout<< "Turning RIGHT (R intersection) backtrace false..." << endl;
+      cout<< "Turning RIGHT (R intersection)" << endl;
       mflag= (direction+3)%4;
       mask = mask | 1 << mflag;
       turnR();
