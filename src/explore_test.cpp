@@ -285,7 +285,7 @@ void setup()
 
   segmentStartTime = millis(); // start measuring travel time from the initial node
   ignoreIntersectionUntil=millis();
-//  mode_set(1);
+mode_set(0);
   cout<<"starting..."<<endl;
   //updateGraphInDatabase("new graph");
   last_read_tagUID="START_NODE";
@@ -970,11 +970,8 @@ void driveMotors(int leftSpeed, int rightSpeed)
  */
 void handleLineFollow()
 {
-  for( uint16_t val : sensorValues){
-    Serial.print(val);
-    Serial.print("  ");
-  }
-  Serial.println();
+  
+
   uint16_t position = qtr.readLineBlack(sensorValues);
   int error = position - 2500;  // for 6 sensors
   float proportional = error;
@@ -1007,9 +1004,10 @@ void handleLineFollow()
 bool checkForRFID()
 {
   if (rfid.PICC_IsNewCardPresent() || ignoreRFIDUntil < millis()) {
-    ignoreRFIDUntil = millis() + 2000;
+    
     if (rfid.PICC_ReadCardSerial()) {
       // Build the UID String
+      ignoreRFIDUntil = millis() + 2000;
       last_read_tagUID = "";
       for (int i = 0; i < rfid.uid.size; i++) {
         last_read_tagUID += String(rfid.uid.uidByte[i], HEX);
@@ -1033,56 +1031,51 @@ bool checkForRFID()
  */
 String detectIntersection() {
 
-  uint16_t reading[6];
-  reading[0]=sensorValues[0];
-  reading[1]=sensorValues[1];
-  reading[2]=sensorValues[2];
-  reading[3]=sensorValues[3];
-  reading[4]=sensorValues[4];
-  reading[5]=sensorValues[5];
+  int thresholdLeft = qtr.calibrationOn.minimum[0] + 300;  // Threshold for left sensors
+  int thresholdRight = qtr.calibrationOn.minimum[5] + 300; // Threshold for right sensors
 
-  int threshold =200; // General threshold adjustment
+  // Check left side (sensors [0, 1, 2])
+  bool leftSide = (sensorValues[0] > thresholdLeft &&
+                   sensorValues[1] > thresholdLeft &&
+                   sensorValues[2] > thresholdLeft);
 
-  bool leftSide = (reading[0] > threshold &&
-                   reading[1] > threshold &&
-                   reading[2] > threshold);
+  // Check right side (sensors [3, 4, 5])
+  bool rightSide = (sensorValues[3] > thresholdRight &&
+                    sensorValues[4] > thresholdRight &&
+                    sensorValues[5] > thresholdRight);
 
-  bool rightSide = (reading[3] > threshold &&
-                    reading[4] > threshold &&
-                    reading[5] > threshold);
-
-  bool nothing = (reading[0] < threshold &&
-                  reading[1] < threshold &&
-                  reading[2] < threshold &&
-                  reading[3] < threshold &&
-                  reading[4] < threshold &&
-                  reading[5] < threshold);
+  bool nothing = (sensorValues[0] < thresholdLeft &&
+                  sensorValues[1] < thresholdLeft &&
+                  sensorValues[2] < thresholdLeft &&
+                  sensorValues[3] < thresholdRight &&
+                  sensorValues[4] < thresholdRight &&
+                  sensorValues[5] < thresholdRight);
   
   // Determine intersection type
   if (leftSide && rightSide) {
     Serial.println("");
-    for( uint16_t val : reading){
+    for( uint16_t val : sensorValues){
     Serial.print(val);
     Serial.print("  ");
   }
     return "T";  // T or + intersection
   } else if (leftSide) {
     Serial.println("");
-    for( uint16_t val : reading){
+    for( uint16_t val : sensorValues){
     Serial.print(val);
     Serial.print("  ");
   }
     return "L";  // Left intersection
   } else if (rightSide) {
     Serial.println("");
-    for( uint16_t val : reading){
+    for( uint16_t val : sensorValues){
     Serial.print(val);
     Serial.print("  ");
   }
     return "R";  // Right intersection
   } else if(nothing){
     Serial.println("");
-    for( uint16_t val : reading){
+    for( uint16_t val : sensorValues){
     Serial.print(val);
     Serial.print("  ");
   }
